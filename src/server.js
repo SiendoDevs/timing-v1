@@ -26,10 +26,33 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function ensureBrowser() {
   if (browser && page) return;
-  browser = await puppeteer.launch({
+  
+  // Opciones de lanzamiento para Puppeteer en Render
+  const launchOptions = {
     headless: "new",
-    args: ["--no-sandbox", "--disable-setuid-sandbox"]
-  });
+    args: [
+      "--no-sandbox", 
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
+      "--disable-accelerated-2d-canvas",
+      "--no-first-run",
+      "--no-zygote",
+      "--single-process", 
+      "--disable-gpu"
+    ]
+  };
+
+  // Si estamos en producción (Render detecta NODE_ENV=production o similar, 
+  // pero lo más seguro es checkear si existe executablePath del sistema)
+  // En Render, Chrome suele estar en /usr/bin/google-chrome-stable o similar si se instala.
+  // Pero usando puppeteer normal, intenta descargar su propio chrome.
+  
+  // INTENTO 1: Usar executablePath explícito si se define en ENV (común en docker/render)
+  if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+    launchOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+  }
+
+  browser = await puppeteer.launch(launchOptions);
   page = await browser.newPage();
   await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
   await page.setViewport({ width: 1920, height: 1080 });
