@@ -139,7 +139,8 @@ export default function App() {
     let mounted = true;
     async function load() {
       try {
-        const res = await fetch("/api/standings");
+        const apiUrl = import.meta.env.VITE_API_URL || "/api";
+        const res = await fetch(`${apiUrl}/standings`);
         const data = await res.json();
         if (!mounted) return;
         let nextTitle = data.sessionName ? String(data.sessionName) : "Live Timing";

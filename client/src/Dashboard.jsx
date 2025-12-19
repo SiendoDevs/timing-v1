@@ -26,7 +26,8 @@ export default function Dashboard() {
   const [previewRows, setPreviewRows] = useState([]);
 
   async function loadConfig() {
-    const res = await fetch("/api/config");
+    const apiUrl = import.meta.env.VITE_API_URL || "/api";
+    const res = await fetch(`${apiUrl}/config`);
     const data = await res.json();
     setUrl(data.speedhiveUrl || "");
     setOverlayEnabled(data.overlayEnabled !== false);
@@ -35,7 +36,8 @@ export default function Dashboard() {
     setSaving(true);
     setStatus("");
     try {
-      const res = await fetch("/api/config", {
+      const apiUrl = import.meta.env.VITE_API_URL || "/api";
+      const res = await fetch(`${apiUrl}/config`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ speedhiveUrl: url, overlayEnabled })
@@ -52,7 +54,8 @@ export default function Dashboard() {
   async function probar() {
     setStatus("Probando…");
     try {
-      const res = await fetch(`/api/standings?debug=1&force=1&url=${encodeURIComponent(url)}`);
+      const apiUrl = import.meta.env.VITE_API_URL || "/api";
+      const res = await fetch(`${apiUrl}/standings?debug=1&force=1&url=${encodeURIComponent(url)}`);
       const data = await res.json();
       setLastUpdated(data.updatedAt || Date.now());
       setSessionName(data.sessionName || "");
@@ -68,7 +71,8 @@ export default function Dashboard() {
     setSaving(true);
     setStatus("");
     try {
-      const res = await fetch("/api/config", {
+      const apiUrl = import.meta.env.VITE_API_URL || "/api";
+      const res = await fetch(`${apiUrl}/config`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ overlayEnabled: !overlayEnabled })
