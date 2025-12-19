@@ -1,0 +1,134 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: rgba(0,0,0,0.0);
+  --panel: rgba(0,0,0,0.80);
+  --text: #f5f7fa;
+  --accent: #ffd400;
+  --overlay-wpx: 380;
+  --overlay-m: 24;
+  --header-bg: #D8552B;
+  --fastest: #8000FF;
+  --up: #00D084;
+  --down: #FF4D4F;
+}
+
+html, body, #root {
+  width: 100%;
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Arial, sans-serif;
+  overflow: auto;
+}
+
+@keyframes fastestPulse {
+  0% { filter: brightness(1); }
+  50% { filter: brightness(1.45); }
+  100% { filter: brightness(1); }
+}
+
+tr td {
+  transition: background-color 500ms ease, color 500ms ease;
+}
+
+.fastest td {
+  background: var(--fastest);
+  color: #fff;
+}
+.fastest.flash td {
+  animation: fastestPulse 900ms ease-in-out infinite;
+}
+
+@keyframes flagSlideIn {
+  0% { transform: translate(140%, -50%); opacity: 0; }
+  100% { transform: translate(0, -50%); opacity: 1; }
+}
+.flag-icon {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  transform: translate(0, -50%);
+  font-size: 16px;
+  line-height: 1;
+}
+.flag-left {
+  left: 20px;
+  right: auto;
+  font-size: 18px;
+}
+.show-left {
+  animation: flagSlideInLeft 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+@keyframes flagSlideInLeft {
+  0% { transform: translate(-140%, -50%); opacity: 0; }
+  100% { transform: translate(0, -50%); opacity: 1; }
+}
+
+.metric-swap {
+  display: inline-block;
+  animation: swapFadeIn 400ms ease-out both;
+}
+@keyframes swapFadeIn {
+  0% { opacity: 0; transform: translateY(4px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+/* Custom animations for laps counter */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes zoomIn {
+  from { transform: scale(0.5); }
+  to { transform: scale(1); }
+}
+
+.animate-in {
+  animation-duration: 300ms;
+  animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+  animation-fill-mode: both;
+}
+
+.fade-in {
+  animation-name: fadeIn;
+}
+
+.zoom-in {
+  animation-name: zoomIn;
+}
+
+.fade-in.zoom-in {
+  animation-name: fadeIn, zoomIn;
+}
+
+@keyframes progressFill {
+  0% { width: 0%; opacity: 0.5; }
+  100% { width: 100%; opacity: 1; }
+}
+
+.animate-progress {
+  animation: progressFill 1s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+@keyframes progressFillTemp {
+  0% { width: 0%; opacity: 0.5; }
+  50% { width: 100%; opacity: 1; }
+  80% { width: 100%; opacity: 1; }
+  100% { width: 100%; opacity: 0; }
+}
+
+.animate-progress-temp {
+  animation: progressFillTemp 2s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+.fade-in.zoom-in {
+  animation-name: fadeIn, zoomIn;
+}

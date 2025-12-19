@@ -1,0 +1,28 @@
+{
+  "name": "obs-speedhive-overlay",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Overlay para OBS que obtiene leaderboard desde Speedhive (React + Vite + Tailwind)",
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "express": "^4.21.1",
+    "lucide-react": "^0.562.0",
+    "puppeteer": "^23.7.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-ui-animate": "^5.2.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.47",
+    "tailwindcss": "^3.4.16",
+    "vite": "^5.4.11"
+  }
+}
