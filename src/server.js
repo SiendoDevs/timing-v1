@@ -441,7 +441,12 @@ app.get("/api/standings", async (_req, res) => {
     res.json({ source: speedhiveUrl, updatedAt: data.updatedAt, sessionName: data.sessionName || "", flagFinish: !!data.flagFinish, standings: Array.isArray(data.standings) ? data.standings : [], announcements: data.announcements || [], debug: data.debug });
   } catch (err) {
     inFlight = false;
-    res.json({ source: speedhiveUrl, updatedAt: Date.now(), sessionName: lastData.sessionName || "", flagFinish: !!lastData.flagFinish, standings: lastData.standings || [], announcements: lastData.announcements || [], error: String(err) });
+    console.error("Scrape Error:", err);
+    let errorMsg = String(err);
+    if (errorMsg.includes("Could not find Chrome")) {
+      errorMsg += " (HINT: Ensure Render service is set to 'Docker' Runtime)";
+    }
+    res.json({ source: speedhiveUrl, updatedAt: Date.now(), sessionName: lastData.sessionName || "", flagFinish: !!lastData.flagFinish, standings: lastData.standings || [], announcements: lastData.announcements || [], error: errorMsg });
   }
 });
 
