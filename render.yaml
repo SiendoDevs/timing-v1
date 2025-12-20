@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: timing-backend
+    name: timing-v1
     env: docker
     plan: free
     branch: master

@@ -72,96 +72,141 @@ async function ensureBrowser() {
   // En Render, Chrome suele estar en /usr/bin/google-chrome-stable o similar si se instala.
   // Pero usando puppeteer normal, intenta descargar su propio chrome.
   
-  // INTENTO 1: Usar executablePath explícito si se define en ENV (común en docker/render)
-  if (process.env.PUPPETEER_EXECUTABLE_PATH) {
-    launchOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
-  }
-
-  browser = await puppeteer.launch(launchOptions);
-  page = await browser.newPage();
-  await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36");
-  await page.setViewport({ width: 1920, height: 1080 });
-  
-  // Forward browser console logs to Node terminal
-  page.on('console', msg => console.log('BROWSER LOG:', msg.text()));
-}
-
-async function scrapeStandings({ debug = false, overrideUrl = null } = {}) {
-  const targetUrl = overrideUrl || speedhiveUrl;
-  if (!targetUrl) {
-    return { standings: [], sessionName: "", sessionLaps: "", flagFinish: false, announcements: [], updatedAt: Date.now() };
-  }
-  
-  await ensureBrowser();
-  
-  // Check if browser is already at the target URL to avoid reloading the wrong page
-  const currentUrl = page.url();
-  // Normalize URLs for comparison (ignore trailing slash, query params, etc if needed)
-  // But strict comparison is safer to ensure we switch sessions immediately.
-  const isSameUrl = currentUrl === targetUrl;
-
-  if (!isSameUrl) {
-    try {
-      console.log(`Navigating to ${targetUrl} (was ${currentUrl})`);
-      // When switching URLs, we force a full navigation
-      await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 25000 });
-      // Reset last data on URL switch to avoid showing old session data
-      lastData = { standings: [], sessionName: "", flagFinish: false, updatedAt: 0 };
-    } catch (e) {
-      console.log("Nav warning:", String(e));
-    }
-  } else {
-    // If already on the page, don't reload to preserve SPA state and avoid delay.
-    // However, we must verify the page is not stuck/broken.
-    try {
-      const isHealthy = await Promise.race([
-          page.evaluate(() => {
-            const t = document.body.innerText || "";
-            if (t.includes("Loading") || t.includes("Please wait")) return false;
-            const rows = document.querySelectorAll('.datatable-body-row, tr, [role="row"], .role-row');
-            return rows.length > 2;
-          }),
-          new Promise((_, r) => setTimeout(() => r(new Error("Health check timeout")), 5000))
-      ]);
-      if (!isHealthy) {
-        console.log("Page appears stuck or empty, forcing reload...");
-        await page.reload({ waitUntil: "domcontentloaded", timeout: 25000 });
+      // INTENTO 1: Usar executablePath explícito si se define en ENV (común en docker/render)
+      if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+        launchOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
       }
-    } catch (e) {
-      console.log("Health check failed, reloading:", String(e));
-      try { await page.reload({ waitUntil: "domcontentloaded", timeout: 25000 }); } catch (ee) {}
+
+      // Add no-sandbox args to prevent crashes in containerized environments
+      launchOptions.args = [
+          ...(launchOptions.args || []),
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-accelerated-2d-canvas',
+          '--no-first-run',
+          '--no-zygote',
+          '--single-process',
+          '--disable-gpu'
+      ];
+    
+      browser = await puppeteer.launch(launchOptions);
+      page = await browser.newPage();
+      
+      // Prevent navigation timeout errors by disabling timeout on page operations
+      page.setDefaultNavigationTimeout(60000); 
+      page.setDefaultTimeout(60000);
+
+      await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36");
+      await page.setViewport({ width: 1920, height: 1080 });
+      
+      // Forward browser console logs to Node terminal
+      page.on('console', msg => console.log('BROWSER LOG:', msg.text()));
     }
-  }
-  
-  // Wait for "Loading" to disappear
-  try {
-    await page.waitForFunction(() => {
-       const t = document.body.innerText || "";
-       return !t.includes("Loading") && !t.includes("Please wait");
-    }, { timeout: 10000 });
-  } catch (e) {
-    console.log("Wait for loading-gone timeout");
-  }
+    
+    async function scrapeStandings({ debug = false, overrideUrl = null } = {}) {
+      const targetUrl = overrideUrl || speedhiveUrl;
+      if (!targetUrl) {
+        return { standings: [], sessionName: "", sessionLaps: "", flagFinish: false, announcements: [], updatedAt: Date.now() };
+      }
+      
+      try {
+        await ensureBrowser();
+      } catch (e) {
+        console.error("Browser launch failed, retrying in next cycle:", e);
+        // Force browser reset
+        try { if (browser) await browser.close(); } catch (_) {}
+        browser = null;
+        page = null;
+        return lastData;
+      }
+      
+      // Check if browser is already at the target URL to avoid reloading the wrong page
+      let currentUrl = "";
+      try {
+         currentUrl = page.url();
+      } catch (e) {
+         console.log("Error getting page URL, browser might be crashed:", e);
+         try { if (browser) await browser.close(); } catch (_) {}
+         browser = null; page = null;
+         return lastData;
+      }
 
-  // Try to wait for actual data rows to appear
-  try {
-    await page.waitForFunction(() => {
-       // Check for specific rows or substantial content
-       const rows = document.querySelectorAll('.datatable-body-row, tr, [role="row"], .role-row');
-       if (rows.length > 2) return true;
-       
-       // Fallback: check text length if rows are not standard
-       const bodyText = document.body.innerText || "";
-       return bodyText.length > 500 && !bodyText.includes("Loading");
-    }, { timeout: 15000 });
-  } catch (e) {
-    console.log("Wait for content timeout, proceeding anyway...");
-  }
-  
-  await delay(100);
-
-  const result = await Promise.race([
-    page.evaluate((wantDebug) => {
+      // Normalize URLs for comparison (ignore trailing slash, query params, etc if needed)
+      // But strict comparison is safer to ensure we switch sessions immediately.
+      const isSameUrl = currentUrl === targetUrl;
+    
+      if (!isSameUrl) {
+        try {
+          console.log(`Navigating to ${targetUrl} (was ${currentUrl})`);
+          // When switching URLs, we force a full navigation
+          await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
+          // Reset last data on URL switch to avoid showing old session data
+          lastData = { standings: [], sessionName: "", flagFinish: false, updatedAt: 0 };
+        } catch (e) {
+          console.log("Nav warning:", String(e));
+          // If navigation fails, we might need to restart browser next time
+          try { if (browser) await browser.close(); } catch (_) {}
+          browser = null; page = null;
+          return lastData;
+        }
+      } else {
+        // If already on the page, don't reload to preserve SPA state and avoid delay.
+        // However, we must verify the page is not stuck/broken.
+        try {
+          const isHealthy = await Promise.race([
+              page.evaluate(() => {
+                const t = document.body.innerText || "";
+                if (t.includes("Loading") || t.includes("Please wait")) return false;
+                const rows = document.querySelectorAll('.datatable-body-row, tr, [role="row"], .role-row');
+                return rows.length > 2;
+              }),
+              new Promise((_, r) => setTimeout(() => r(new Error("Health check timeout")), 20000))
+          ]);
+          if (!isHealthy) {
+            console.log("Page appears stuck or empty, forcing reload...");
+            await page.reload({ waitUntil: "domcontentloaded", timeout: 60000 });
+          }
+        } catch (e) {
+          console.log("Health check failed, reloading:", String(e));
+          try { await page.reload({ waitUntil: "domcontentloaded", timeout: 60000 }); } catch (ee) {
+             console.log("Reload failed, restarting browser:", String(ee));
+             try { if (browser) await browser.close(); } catch (_) {}
+             browser = null; page = null;
+          }
+        }
+      }
+      
+      // Wait for "Loading" to disappear
+      try {
+        await page.waitForFunction(() => {
+           const t = document.body.innerText || "";
+           return !t.includes("Loading") && !t.includes("Please wait");
+        }, { timeout: 30000 });
+      } catch (e) {
+        console.log("Wait for loading-gone timeout");
+      }
+    
+      // Try to wait for actual data rows to appear
+      try {
+        await page.waitForFunction(() => {
+           // Check for specific rows or substantial content
+           const rows = document.querySelectorAll('.datatable-body-row, tr, [role="row"], .role-row');
+           if (rows.length > 2) return true;
+           
+           // Fallback: check text length if rows are not standard
+           const bodyText = document.body.innerText || "";
+           return bodyText.length > 500 && !bodyText.includes("Loading");
+        }, { timeout: 30000 });
+      } catch (e) {
+        console.log("Wait for content timeout, proceeding anyway...");
+      }
+      
+      await delay(100);
+    
+      try {
+          const result = await Promise.race([
+            page.evaluate((wantDebug) => {
     function text(el) { return (el?.textContent || "").trim(); }
     function safeParseInt(v) { const n = parseInt(String(v).replace(/[^\d]/g, "")); return Number.isFinite(n) ? n : null; }
     
@@ -556,7 +601,7 @@ async function scrapeStandings({ debug = false, overrideUrl = null } = {}) {
     } : null;
     return { rows, sessionName, sessionLaps, flagFinish, announcements, debug: dbg };
   }, debug === true),
-  new Promise((_, reject) => setTimeout(() => reject(new Error("Scrape evaluation timeout")), 15000))
+  new Promise((_, reject) => setTimeout(() => reject(new Error("Scrape evaluation timeout")), 60000))
   ]);
   if (!overrideUrl) {
     lastData = { standings: result.rows, sessionName: result.sessionName || "", sessionLaps: result.sessionLaps || "", flagFinish: !!result.flagFinish, announcements: result.announcements || [], updatedAt: Date.now() };
@@ -565,6 +610,15 @@ async function scrapeStandings({ debug = false, overrideUrl = null } = {}) {
   } else {
     return { standings: result.rows, sessionName: result.sessionName || "", sessionLaps: result.sessionLaps || "", flagFinish: !!result.flagFinish, announcements: result.announcements || [], updatedAt: Date.now(), debug: result.debug };
   }
+} catch (e) {
+  console.log("Scrape Error:", String(e));
+  if (String(e).includes("Execution context was destroyed") || String(e).includes("Target closed")) {
+      // If context destroyed, force browser restart next time
+      try { if (browser) await browser.close(); } catch (_) {}
+      browser = null; page = null;
+  }
+  return { standings: [], sessionName: "", sessionLaps: "", flagFinish: false, announcements: [], updatedAt: Date.now() };
+}
 }
 
 app.get("/api/standings", async (_req, res) => {
@@ -639,12 +693,12 @@ app.post("/api/config", async (req, res) => {
       overlayEnabled = nextOverlayEnabled;
     }
     
-    // Persist config
-    try {
-      fs.writeFileSync(CONFIG_FILE, JSON.stringify({ speedhiveUrl, overlayEnabled }));
-    } catch (e) {
-      console.error("Error saving config:", e);
-    }
+    // No persist config - memory only
+    // try {
+    //   fs.writeFileSync(CONFIG_FILE, JSON.stringify({ speedhiveUrl, overlayEnabled }));
+    // } catch (e) {
+    //   console.error("Error saving config:", e);
+    // }
 
     res.json({ ok: true, speedhiveUrl, overlayEnabled });
   } catch (e) {
