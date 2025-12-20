@@ -641,14 +641,22 @@ async function ensureBrowser() {
         console.log("Scrape returned empty results for same/ambiguous session - preserving previous data.");
         // Update timestamp to show we are still alive
         lastData.updatedAt = Date.now();
-        // Update announcements if available
+        // Update announcements if available, otherwise keep old ones (implicit in returning lastData)
         if (result.announcements && result.announcements.length) {
             lastData.announcements = result.announcements;
         }
         return lastData;
     }
 
-    lastData = { standings: result.rows, sessionName: result.sessionName || "", sessionLaps: result.sessionLaps || "", flagFinish: !!result.flagFinish, announcements: result.announcements || [], updatedAt: Date.now() };
+    // Logic to prevent announcement flickering:
+    // If we have valid rows (not empty), but announcements are empty, 
+    // and it's the same session, preserve the old announcements.
+    let finalAnnouncements = result.announcements || [];
+    if (finalAnnouncements.length === 0 && (sameSession || ambiguousSession) && lastData.announcements && lastData.announcements.length > 0) {
+       finalAnnouncements = lastData.announcements;
+    }
+
+    lastData = { standings: result.rows, sessionName: result.sessionName || "", sessionLaps: result.sessionLaps || "", flagFinish: !!result.flagFinish, announcements: finalAnnouncements, updatedAt: Date.now() };
     lastFetchTs = Date.now();
     return lastData;
   } else {
