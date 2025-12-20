@@ -113,7 +113,7 @@ async function scrapeStandings({ debug = false, overrideUrl = null } = {}) {
     console.log("Wait for content timeout, proceeding anyway...");
   }
   
-  await delay(2000);
+  await delay(500);
 
   const result = await page.evaluate((wantDebug) => {
     function text(el) { return (el?.textContent || "").trim(); }
@@ -578,6 +578,13 @@ app.post("/api/config", async (req, res) => {
         speedhiveUrl = nextUrl;
         lastData = { standings: [], sessionName: "", flagFinish: false, updatedAt: 0 };
         lastFetchTs = 0;
+        
+        // Trigger background scrape immediately if URL changed
+        if (!inFlight) {
+             inFlight = true;
+             console.log("Triggering background scrape due to config change...");
+             scrapeStandings().finally(() => { inFlight = false; });
+        }
       }
     }
     if (typeof nextOverlayEnabled === "boolean") {
