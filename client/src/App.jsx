@@ -354,145 +354,121 @@ export default function App() {
       }
     }
 
-    if (nextRows.length > 0 && !trackingRef.current) {
-      // Random fixed pilot for testing
-      const valid = nextRows.filter(r => {
-        if (!r.number || !r.name) return false;
-        const p = parseInt(safe(r.position), 10);
-        return !isNaN(p) && p <= 10;
+      // Check for finishers to trigger lap card simulation
+      const finishers = [];
+      nextRows.forEach(r => {
+        const id = idFor(r);
+        // Find previous data for this driver
+        // We can't rely solely on prevMap (positions) for full data.
+        // Let's use the actual previous row object if possible, or fallback.
+        const prevRow = prevRows.find(pr => idFor(pr) === id);
+        
+        if (prevRow) {
+           const prevLaps = parseInt(safe(prevRow.laps), 10);
+           const curLaps = parseInt(safe(r.laps), 10);
+           // Detect lap increment
+           if (curLaps > prevLaps) {
+             const lastLapTime = parseTime(r.lastLap);
+             const prevBestTime = parseTime(prevRow.bestLap);
+             
+             if (lastLapTime) {
+                let delta = null;
+                // If they had a previous best, compare against it
+                if (prevBestTime) {
+                   delta = (lastLapTime - prevBestTime) * 1000;
+                }
+                finishers.push({ r, delta, lastLap: r.lastLap });
+             }
+           }
+        }
       });
-      if (valid.length > 0) {
-        const pick = valid[Math.floor(Math.random() * valid.length)];
-        startLapCard(pick);
-      }
-    } else if (trackingRef.current) {
-       let me = nextRows.find((x) => idFor(x) === trackingRef.current.id);
-       if (!me && trackingRef.current.number) {
-         me = nextRows.find((x) => safe(x.number) === trackingRef.current.number);
-       }
 
-       if (me && !trackingRef.current.finished) {
-         const curLaps = parseInt(me.laps ?? -1, 10);
-         const startLaps = parseInt(trackingRef.current.lapsStart ?? -1, 10);
-         const lapsChanged = curLaps > startLaps;
+      // Priority: Pick finisher with best improvement (negative delta), or just any finisher
+      if (finishers.length > 0 && !lapCardVisible) {
+         // Sort by delta (ascending -> best improvement first)
+         // If delta is null (first lap?), put at end
+         finishers.sort((a, b) => {
+            if (a.delta === null) return 1;
+            if (b.delta === null) return -1;
+            return a.delta - b.delta;
+         });
          
-         const curLast = safe(me.lastLap);
-         const startLast = safe(trackingRef.current.lastLapStart);
-         const lastLapChanged = curLast !== startLast && curLast !== "" && !/lap/i.test(curLast);
-         
-         if (lapsChanged || lastLapChanged) {
-           finishLapCard(me.lastLap, me.laps);
-         }
-       } else if (!me) {
-         endLapCard();
-       }
-    }
+         const pick = finishers[0];
+         triggerLapSimulation(pick.r, pick.lastLap, pick.delta);
+      }
     
     /*
-    const opened = [];
-    for (let i = 0; i < nextRows.length; i++) {
-      const r = nextRows[i];
-      const id = idFor(r);
-      const prevPos = lastPositions.current.get(id);
-      const curNum = Number.parseInt(safe(r.position), 10);
-      const curPos = Number.isFinite(curNum) ? curNum : 9999;
-      const prevVal = Number.isFinite(prevPos) ? prevPos : 9999;
-      lastPositions.current.set(id, curPos);
-      const prevLap = lastLaps.current.get(id);
-      if (prevLap != null && (r.laps ?? -1) > prevLap) opened.push({ id, r });
-      lastLaps.current.set(id, r.laps ?? prevLap ?? null);
-    }
-    if (opened.length) {
-      if (!trackingRef.current) {
-        const pick = opened[Math.floor(Math.random() * opened.length)];
-        if (Math.random() < 0.6) startLapCard(pick.r);
-      } else {
-        const me = nextRows.find((x) => idFor(x) === trackingRef.current.id);
-        if (me && (me.laps ?? -1) > trackingRef.current.lapsStart) endLapCard();
-      }
-    }
+    if (nextRows.length > 0 && !trackingRef.current) {
+      // Random fixed pilot for testing
+    ...
     */
   }
 
-  function startLapCard(r) {
-    const next = { id: idFor(r), number: safe(r.number), lapsStart: r.laps ?? 0, lastLapStart: r.lastLap, t0: Date.now() };
-    const best = parseTime(r.bestLap);
+  function triggerLapSimulation(r, finalTimeStr, deltaMs) {
+    if (lapCardVisible) return; // Busy
     
-    trackingRef.current = { ...next, bestLapMs: best != null ? best * 1000 : null };
-    setTracking(trackingRef.current);
+    const finalMs = parseTime(finalTimeStr) * 1000;
+    if (!finalMs) return;
+
+    // Start 5 seconds before finish
+    const duration = 5000;
+    const startMs = Math.max(0, finalMs - duration);
+    
     setLapBadge(safe(r.number));
     setLapWho(safe(surname(r.name)));
-    setLapTimerText("0:00.0");
-    setLapDelta(null);
+    setLapTimerText(formatTimer(startMs));
+    setLapDelta(null); // Hide delta initially
     setLapFinishAnim(false);
     setLapCardVisible(true);
     
+    const startTime = Date.now();
+    
     if (lapTickRef.current) clearInterval(lapTickRef.current);
+    
     lapTickRef.current = setInterval(() => {
-      setLapTimerText((prev) => {
-        const now = Date.now();
-        const ms = now - (trackingRef.current?.t0 ?? now);
-        
-        // Calculate delta only at finish
-        setLapDelta(null);
-
-        // Safety timeout: if time exceeds best lap by > 2 seconds, or absolute max 3 mins
-        const bestMs = trackingRef.current?.bestLapMs;
-        const limitMs = bestMs ? (bestMs + 2000) : 180000;
-        
-        if (ms > limitMs) {
-          endLapCard();
-        }
-        return formatTimer(ms);
-      });
-    }, 100);
+       const now = Date.now();
+       const elapsed = now - startTime;
+       const currentSimTime = startMs + elapsed;
+       
+       if (elapsed >= duration) {
+          // Finished
+          setLapTimerText(formatTimer(finalMs)); // Ensure exact final time
+          if (lapTickRef.current) clearInterval(lapTickRef.current);
+          lapTickRef.current = null;
+          
+          // Show delta
+          setLapDelta(deltaMs);
+          setLapFinishAnim(true);
+          
+          // Hold for 4 seconds then close
+          setTimeout(() => {
+             endLapCard();
+          }, 4000);
+       } else {
+          setLapTimerText(formatTimer(currentSimTime));
+       }
+    }, 50);
   }
 
-  function finishLapCard(finalTime, newLaps) {
-    if (trackingRef.current) trackingRef.current.finished = true;
-    if (lapTickRef.current) clearInterval(lapTickRef.current);
-    lapTickRef.current = null;
-    
-    let currentDelta = null;
-    const finalTimeStr = safe(finalTime);
-    
-    // Only process if we have a valid time string (not "IN PIT" or empty)
-    if (finalTimeStr && !/pit/i.test(finalTimeStr)) {
-      setLapTimerText(finalTimeStr);
-      // Calculate final delta
-      if (trackingRef.current?.bestLapMs) {
-        const finalMs = parseTime(finalTimeStr) * 1000;
-        if (finalMs) {
-          const d = finalMs - trackingRef.current.bestLapMs;
-          setLapDelta(d);
-          currentDelta = d;
-        }
-      }
-    } else {
-        // Invalid time or PIT -> close immediately
-        endLapCard();
-        return;
-    }
-    
-    setLapFinishAnim(true);
-    if (trackingRef.current) {
-      trackingRef.current.lapsStart = newLaps ?? ((trackingRef.current.lapsStart ?? 0) + 1);
-    }
-    setTimeout(() => {
-      endLapCard();
-    }, 3000);
-  }
   function endLapCard() {
-    if (!trackingRef.current) return;
     if (lapTickRef.current) clearInterval(lapTickRef.current);
     lapTickRef.current = null;
     setLapCardVisible(false);
-    setTimeout(() => {
-      trackingRef.current = null;
-      setTracking(null);
-      setLapFinishAnim(false);
-    }, 220);
+    setLapFinishAnim(false);
+    setTracking(null);
+    trackingRef.current = null;
   }
+/*
+  function startLapCard(r) {
+    ...
+  }
+  function finishLapCard(finalTime, newLaps) {
+    ...
+  }
+  function endLapCard() {
+    ...
+  }
+*/
 
   const fi = fastestIndex(rows);
   let bestOver = null;
