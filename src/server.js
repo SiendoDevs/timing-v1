@@ -198,7 +198,7 @@ async function ensureBrowser() {
                 // We'll trust the scrape step to wait for rows.
                 return true;
               }),
-              new Promise((_, r) => setTimeout(() => r(new Error("Health check timeout")), 5000))
+              new Promise((_, r) => setTimeout(() => r(new Error("Health check timeout")), 30000))
           ]);
           if (!isHealthy) {
             console.log("Page appears stuck or empty (failed health check), forcing reload...");
