@@ -90,15 +90,20 @@ async function ensureBrowser() {
       // Forward browser console logs to Node terminal
       page.on('console', msg => console.log('BROWSER LOG:', msg.text()));
 
-      // Optimize: Block unnecessary resources to speed up loading
-      // NOTE: Relaxing this significantly as it was breaking data loading (net::ERR_FAILED)
-      // Only blocking images for now. Fonts and media might be needed for layout/state.
+      // Optimize: Block unnecessary resources to speed up loading and save memory
+      // Blocking images/media/fonts is crucial for stability in low-memory environments (like Render free tier)
       await page.setRequestInterception(true);
       page.on('request', (req) => {
           const resourceType = req.resourceType();
-          // STRICTER SAFETY: Only block images. 
-          // Previous blocking of 'font' or 'media' might have caused Speedhive to fail rendering.
-          if (['image'].includes(resourceType)) {
+          // Block heavy assets that are not essential for text content
+          if (['image', 'media', 'font', 'stylesheet'].includes(resourceType)) {
+              // CAREFUL: Blocking stylesheets might break some SPAs, but Speedhive is usually data-heavy.
+              // If layout breaks detection, remove 'stylesheet' from this list.
+              // For now, let's block 'image', 'media', 'font' to save RAM.
+              // Update: NOT blocking stylesheets as it might hide elements needed for detection (e.g. display:none)
+          }
+          
+          if (['image', 'media', 'font'].includes(resourceType)) {
               req.abort();
           } else {
               req.continue();
@@ -159,22 +164,29 @@ async function ensureBrowser() {
           const isHealthy = await Promise.race([
               page.evaluate(() => {
                 const t = document.body.innerText || "";
-                if (t.includes("Loading") || t.includes("Please wait")) return false;
-                const rows = document.querySelectorAll('.datatable-body-row, tr, [role="row"], .role-row');
-                return rows.length > 2;
+                // Relaxed health check: if we have ANY content length, assume it might be valid for now.
+                // Speedhive sometimes takes a long time to render rows, and "Loading" might persist.
+                if (t.length < 50) return false;
+                
+                // If it explicitly says "Loading" for too long, it might be stuck, but let's be lenient.
+                // We'll trust the scrape step to wait for rows.
+                return true;
               }),
-              new Promise((_, r) => setTimeout(() => r(new Error("Health check timeout")), 20000))
+              new Promise((_, r) => setTimeout(() => r(new Error("Health check timeout")), 5000))
           ]);
           if (!isHealthy) {
-            console.log("Page appears stuck or empty, forcing reload...");
+            console.log("Page appears stuck or empty (failed health check), forcing reload...");
             await page.reload({ waitUntil: "domcontentloaded", timeout: 60000 });
           }
         } catch (e) {
-          console.log("Health check failed, reloading:", String(e));
-          try { await page.reload({ waitUntil: "domcontentloaded", timeout: 60000 }); } catch (ee) {
-             console.log("Reload failed, restarting browser:", String(ee));
+          console.error("Health check failed, reloading:", e);
+          try {
+             await page.reload({ waitUntil: "domcontentloaded", timeout: 60000 });
+          } catch (ex) {
+             console.error("Reload failed, restarting browser:", ex);
              try { if (browser) await browser.close(); } catch (_) {}
              browser = null; page = null;
+             return lastData;
           }
         }
       }
