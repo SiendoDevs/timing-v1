@@ -369,13 +369,13 @@ export default function App() {
            // Detect lap increment
            if (curLaps > prevLaps) {
              const lastLapTime = parseTime(r.lastLap);
-             const prevBestTime = parseTime(prevRow.bestLap);
+             const prevLapTime = parseTime(prevRow.lastLap);
              
              if (lastLapTime) {
                 let delta = null;
-                // If they had a previous best, compare against it
-                if (prevBestTime) {
-                   delta = (lastLapTime - prevBestTime) * 1000;
+                // Compare against previous lap time (Lap N vs Lap N-1)
+                if (prevLapTime) {
+                   delta = (lastLapTime - prevLapTime) * 1000;
                 }
                 finishers.push({ r, delta, lastLap: r.lastLap });
              }
