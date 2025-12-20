@@ -68,6 +68,7 @@ export default function App() {
   const [lapsLabel, setLapsLabel] = useState("");
   const [finishFlag, setFinishFlag] = useState(false);
   const [rows, setRows] = useState([]);
+  const [page, setPage] = useState(0);
   
   const MODES = ["GAP", "DIFF", "TOTAL", "BEST", "LAST"];
   const MODE_LABELS = { GAP: "DIF", DIFF: "INT", TOTAL: "TOTAL", BEST: "MEJOR", LAST: "ULTIMA" };
@@ -98,6 +99,21 @@ export default function App() {
   const [showFastest, setShowFastest] = useState(true);
   const [fastestLapVisible, setFastestLapVisible] = useState(false);
   const [fastestLapData, setFastestLapData] = useState(null);
+
+  useEffect(() => {
+    const limit = limitParam && parseInt(limitParam) > 0 ? parseInt(limitParam) : 23;
+    if (rows.length > limit) {
+      const t = setInterval(() => {
+        setPage(p => {
+          const maxPages = Math.ceil(rows.length / limit);
+          return (p + 1) % maxPages;
+        });
+      }, 10000);
+      return () => clearInterval(t);
+    } else {
+      setPage(0);
+    }
+  }, [rows.length, limitParam]);
 
   useEffect(() => {
     const t = setInterval(() => {
@@ -210,7 +226,7 @@ export default function App() {
         setLapsLabel(laps !== null && laps !== undefined ? `Vueltas: ${laps}` : "");
         setRows((prev) => {
           renderEffects(prev, list, nextFlag);
-          return topLimit(list, limitParam);
+          return list;
         });
       } catch (e) {
         // no-op
@@ -257,7 +273,7 @@ export default function App() {
       try {
         const snap = JSON.parse(localStorage.getItem(SNAP_KEY) || "{}");
         if ((!rows || rows.length === 0) && Array.isArray(snap.rows) && snap.rows.length) {
-          setRows(topLimit(snap.rows, limitParam));
+          setRows(snap.rows);
           if (snap.title) setTitle(String(snap.title));
           setFinishFlag(!!snap.finishFlag);
           let laps = snap.sessionLaps;
@@ -273,7 +289,7 @@ export default function App() {
     try {
       const snap = JSON.parse(localStorage.getItem(SNAP_KEY) || "{}");
       if (Array.isArray(snap.rows) && snap.rows.length) {
-        setRows(topLimit(snap.rows, limitParam));
+        setRows(snap.rows);
         if (snap.title) setTitle(String(snap.title));
         setFinishFlag(!!snap.finishFlag);
         let laps = snap.sessionLaps;
@@ -521,6 +537,14 @@ export default function App() {
   const mountedOverlay = useMount(showOverlay, { from: 0, enter: 1, exit: 0 });
   const mountedLap = useMount((lapCardVisible || fastestLapVisible) && showOverlay, { from: 0, enter: 1, exit: 0 });
 
+  const limit = limitParam && parseInt(limitParam) > 0 ? parseInt(limitParam) : 23;
+  const pageStart = page * limit;
+  const visibleRows = rows.slice(pageStart, pageStart + limit);
+
+  // Global fastest index for identifying if the current row holds the overall fastest lap
+  const globalFastestIndex = fastestIndex(rows);
+  const globalFastestRow = globalFastestIndex >= 0 ? rows[globalFastestIndex] : null;
+
   return (
     <div>
       {mountedOverlay((a) => (
@@ -545,7 +569,7 @@ export default function App() {
             </div>
             <table className="w-full table-fixed border-collapse">
               <tbody>
-                {rows.map((r, i) => {
+                {visibleRows.map((r, i) => {
                   const id = idFor(r);
                   const prevPos = lastPositions.current.get(id);
                   const curNum = Number.parseInt(safe(r.position), 10);
@@ -563,10 +587,9 @@ export default function App() {
                         ? <span className="text-[12px] ml-1" style={{ color: "var(--down)" }}>▼</span>
                         : null
                     : null;
-                  const fiTime = fi >= 0 ? parseTime(rows[fi]?.bestLap ?? rows[fi]?.lastLap) : null;
-                  const fiId = fi >= 0 ? `${safe(rows[fi]?.number)}|${safe(surname(rows[fi]?.name))}` : null;
-                  const shouldAnim = fi >= 0 && (fiId !== lastFastestKey || (fiTime != null && (lastFastestTime == null || fiTime < lastFastestTime)));
-                  const isFastest = fi >= 0 && i === fi;
+                  
+                  // Check if this row is the global fastest
+                  const isFastest = globalFastestRow && idFor(r) === idFor(globalFastestRow);
                   const trClass = isFastest && showFastest && !r.hasFinishFlag ? "fastest flash" : "";
                   
                   let metricVal = "";
