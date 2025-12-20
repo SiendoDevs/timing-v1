@@ -11,6 +11,13 @@ const app = express();
 app.use(express.json());
 // Habilitar CORS para cualquier origen (para desarrollo y Vercel)
 app.use(cors());
+// Deshabilitar caché para endpoints de API
+app.use("/api", (req, res, next) => {
+  res.header("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.header("Pragma", "no-cache");
+  res.header("Expires", "0");
+  next();
+});
 app.use(express.static("dist"));
 
 let browser = null;
