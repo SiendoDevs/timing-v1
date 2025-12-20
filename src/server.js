@@ -88,11 +88,26 @@ async function scrapeStandings({ debug = false, overrideUrl = null } = {}) {
     }
   }
   
+  // Wait for "Loading" to disappear
+  try {
+    await page.waitForFunction(() => {
+       const t = document.body.innerText || "";
+       return !t.includes("Loading") && !t.includes("Please wait");
+    }, { timeout: 10000 });
+  } catch (e) {
+    console.log("Wait for loading-gone timeout");
+  }
+
   // Try to wait for actual data rows to appear
   try {
     await page.waitForFunction(() => {
+       // Check for specific rows or substantial content
+       const rows = document.querySelectorAll('.datatable-body-row, tr, [role="row"], .role-row');
+       if (rows.length > 2) return true;
+       
+       // Fallback: check text length if rows are not standard
        const bodyText = document.body.innerText || "";
-       return bodyText.length > 200;
+       return bodyText.length > 500 && !bodyText.includes("Loading");
     }, { timeout: 15000 });
   } catch (e) {
     console.log("Wait for content timeout, proceeding anyway...");
