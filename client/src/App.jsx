@@ -440,10 +440,10 @@ export default function App() {
           setLapDelta(deltaMs);
           setLapFinishAnim(true);
           
-          // Hold for 4 seconds then close
+          // Hold for 10 seconds then close
           setTimeout(() => {
              endLapCard();
-          }, 4000);
+          }, 7000);
        } else {
           setLapTimerText(formatTimer(currentSimTime));
        }
