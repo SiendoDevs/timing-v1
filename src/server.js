@@ -38,6 +38,9 @@ app.use(express.static("dist"));
 
 let browser = null;
 let page = null;
+let scrapeCount = 0; // Track number of scrapes to restart browser periodically
+const MAX_SCRAPES_BEFORE_RESTART = 20; // Restart every 20 scrapes to clear memory leaks
+
 let lastData = { standings: [], sessionName: "", flagFinish: false, updatedAt: 0 };
 let lastFetchTs = 0;
 let scrapePromise = null;
@@ -45,6 +48,15 @@ const MIN_FETCH_INTERVAL = 10000; // Increased to 10 seconds to reduce load and 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function ensureBrowser() {
+  // Check if we need to restart due to scrape count
+  if (browser && scrapeCount >= MAX_SCRAPES_BEFORE_RESTART) {
+      console.log(`Browser reached ${scrapeCount} scrapes. Restarting to free memory...`);
+      try { await browser.close(); } catch(e) {}
+      browser = null;
+      page = null;
+      scrapeCount = 0;
+  }
+
   if (browser && page) {
     if (browser.isConnected()) return;
     try { await browser.close(); } catch(e) {}
@@ -63,7 +75,21 @@ async function ensureBrowser() {
       "--no-first-run",
       "--no-zygote",
       "--single-process", 
-      "--disable-gpu"
+      "--disable-gpu",
+      "--disable-speech-api",
+      "--disable-background-networking",
+      "--disable-background-timer-throttling",
+      "--disable-backgrounding-occluded-windows",
+      "--disable-breakpad",
+      "--disable-component-extensions-with-background-pages",
+      "--disable-extensions",
+      "--disable-features=Translate,BackForwardCache,AcceptCHFrame,MediaRouter,OptimizationHints,AudioServiceOutOfProcess,IsolateOrigins,site-per-process",
+      "--disable-ipc-flooding-protection",
+      "--disable-renderer-backgrounding",
+      "--enable-features=NetworkService,NetworkServiceInProcess",
+      "--force-color-profile=srgb",
+      "--metrics-recording-only",
+      "--mute-audio"
     ]
   };
 
@@ -657,6 +683,10 @@ async function ensureBrowser() {
   }, debug === true),
   new Promise((_, reject) => setTimeout(() => reject(new Error("Scrape evaluation timeout")), 60000))
   ]);
+
+  // Increment scrape count on success
+  scrapeCount++;
+
   if (!overrideUrl) {
     const isEmpty = !result.rows || result.rows.length === 0;
     const hasOldData = lastData.standings && lastData.standings.length > 0;
