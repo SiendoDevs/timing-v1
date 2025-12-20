@@ -253,10 +253,7 @@ async function ensureBrowser() {
     function extractFlagFinish() {
       const byClass = document.querySelector('i.ico-flag-finish-xl') || document.querySelector('[class*="ico-flag-finish"]');
       if (byClass) return true;
-      const h1 = document.querySelector('h1.session-name') || document.querySelector('[class*="session-name"]');
-      const t = text(h1).toLowerCase();
-      const tt = (h1?.getAttribute?.('title') || '').toLowerCase();
-      if (t.includes('final') || tt.includes('final')) return true;
+      // Removed heuristic checking for 'final' in session name as it causes false positives
       const svgFlag = Array.from(document.querySelectorAll('svg, i, span')).some(el => {
         const c = (el.getAttribute('class') || '').toLowerCase();
         return c.includes('flag') && (c.includes('finish') || c.includes('check'));
