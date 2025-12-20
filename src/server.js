@@ -233,21 +233,50 @@ async function ensureBrowser() {
       return document.title || '';
     }
     function extractSessionLaps() {
-      const headers = Array.from(document.querySelectorAll('.header'));
+      // 1. Try specific .header/.value structure (common in Speedhive)
+      const headers = Array.from(document.querySelectorAll('.header, .label'));
       for (const h of headers) {
-        if (text(h).toLowerCase() === 'laps') {
-          // Try sibling first (based on user snippet structure)
+        if (text(h).toLowerCase() === 'laps' || text(h).toLowerCase() === 'vueltas') {
           let val = h.nextElementSibling;
-          if (val && val.classList.contains('value')) return text(val);
+          // Accept any next sibling, not just .value, but prefer .value if exists
+          if (val) {
+             if (val.classList.contains('value')) return text(val);
+             // If not .value, check if it looks like a number
+             const t = text(val);
+             if (/^[\d/]+$/.test(t)) return t;
+          }
           
-          // Try parent search
           const parent = h.parentElement;
           if (parent) {
              val = parent.querySelector('.value');
              if (val) return text(val);
+             // Fallback: look for any element with digits
+             const digitEl = Array.from(parent.children).find(c => c !== h && /^[\d/]+$/.test(text(c)));
+             if (digitEl) return text(digitEl);
           }
         }
       }
+
+      // 2. Generic text search in small containers
+      // Look for "Laps: 12" or "12 Laps"
+      const candidates = Array.from(document.querySelectorAll('div, span, p, li'));
+      for (const el of candidates) {
+         // Optimization: skip complex elements
+         if (el.children.length > 2) continue;
+         const t = text(el);
+         if (!t) continue;
+         
+         // Match "Laps 10", "Laps: 10", "10 Laps", "10/20 Laps"
+         // Avoid matching long sentences
+         if (t.length > 30) continue;
+
+         const m = t.match(/(?:laps|vueltas)\s*[:]?\s*(\d+(?:\/\d+)?)/i);
+         if (m) return m[1];
+         
+         const m2 = t.match(/(\d+(?:\/\d+)?)\s*(?:laps|vueltas)/i);
+         if (m2) return m2[1];
+      }
+      
       return null;
     }
     function extractFlagFinish() {
