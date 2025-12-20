@@ -26,7 +26,7 @@ export default function Dashboard() {
   const [previewRows, setPreviewRows] = useState([]);
 
   async function loadConfig() {
-    const apiOrigin = import.meta.env.VITE_API_URL || "";
+    const apiOrigin = import.meta.env.VITE_API_URL || "https://timing-backend.onrender.com";
     const res = await fetch(`${apiOrigin}/api/config`);
     const data = await res.json();
     setUrl(data.speedhiveUrl || "");
@@ -36,7 +36,7 @@ export default function Dashboard() {
     setSaving(true);
     setStatus("");
     try {
-      const apiOrigin = import.meta.env.VITE_API_URL || "";
+      const apiOrigin = import.meta.env.VITE_API_URL || "https://timing-backend.onrender.com";
       const res = await fetch(`${apiOrigin}/api/config`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -54,7 +54,7 @@ export default function Dashboard() {
   async function probar() {
     setStatus("Probando…");
     try {
-      const apiOrigin = import.meta.env.VITE_API_URL || "";
+      const apiOrigin = import.meta.env.VITE_API_URL || "https://timing-backend.onrender.com";
       const res = await fetch(`${apiOrigin}/api/standings?debug=1&force=1&url=${encodeURIComponent(url)}`);
       const data = await res.json();
       setLastUpdated(data.updatedAt || Date.now());
@@ -71,7 +71,7 @@ export default function Dashboard() {
     setSaving(true);
     setStatus("");
     try {
-      const apiOrigin = import.meta.env.VITE_API_URL || "";
+      const apiOrigin = import.meta.env.VITE_API_URL || "https://timing-backend.onrender.com";
       const res = await fetch(`${apiOrigin}/api/config`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
