@@ -674,6 +674,28 @@ async function ensureBrowser() {
 }
 }
 
+async function executeScrape({ debug = false, overrideUrl = null } = {}) {
+  // Wait for previous scrape
+  let waitCount = 0;
+  while (scrapePromise) {
+     if (waitCount++ > 50) { // 5 seconds
+        throw new Error("Scrape queue timeout - previous scrape stuck");
+     }
+     try { await Promise.race([scrapePromise, delay(100)]); } catch (e) {}
+  }
+
+  const myPromise = scrapeStandings({ debug, overrideUrl });
+  scrapePromise = myPromise;
+
+  try {
+    return await myPromise;
+  } finally {
+    if (scrapePromise === myPromise) {
+      scrapePromise = null;
+    }
+  }
+}
+
 app.get("/api/standings", async (_req, res) => {
   try {
     const debug = _req.query?.debug === "1";
@@ -698,26 +720,9 @@ app.get("/api/standings", async (_req, res) => {
     }
 
     // 3. Start new scrape (serialized)
-    // Double check scrapePromise to handle race conditions if multiple requests waited
-    let waitCount = 0;
-    while (scrapePromise) {
-       if (waitCount++ > 50) { // Wait max 5 seconds (50 * 100ms)
-          throw new Error("Scrape queue timeout - previous scrape stuck");
-       }
-       try { await Promise.race([scrapePromise, delay(100)]); } catch (e) {}
-    }
-
-    const myPromise = scrapeStandings({ debug, overrideUrl: testUrl });
-    scrapePromise = myPromise;
-
-    try {
-      const data = await myPromise;
-      res.json({ source: testUrl || speedhiveUrl, updatedAt: data.updatedAt, sessionName: data.sessionName || "", sessionLaps: data.sessionLaps || "", flagFinish: !!data.flagFinish, standings: Array.isArray(data.standings) ? data.standings : [], announcements: data.announcements || [], debug: data.debug });
-    } finally {
-      if (scrapePromise === myPromise) {
-        scrapePromise = null;
-      }
-    }
+    const data = await executeScrape({ debug, overrideUrl: testUrl });
+    
+    res.json({ source: testUrl || speedhiveUrl, updatedAt: data.updatedAt, sessionName: data.sessionName || "", sessionLaps: data.sessionLaps || "", flagFinish: !!data.flagFinish, standings: Array.isArray(data.standings) ? data.standings : [], announcements: data.announcements || [], debug: data.debug });
   } catch (err) {
     console.error("Scrape Error:", err);
     let errorMsg = String(err);
@@ -738,8 +743,17 @@ app.post("/api/config", async (req, res) => {
     if (typeof nextUrl === "string" && /^https?:\/\//i.test(nextUrl)) {
       if (nextUrl !== speedhiveUrl) {
         speedhiveUrl = nextUrl;
-        lastData = { standings: [], sessionName: "", flagFinish: false, updatedAt: 0 };
+        // Reset lastData partially to avoid confusion, but we will immediately refill it.
+        lastData = { standings: [], sessionName: "", flagFinish: false, announcements: [], updatedAt: 0 };
         lastFetchTs = 0;
+        
+        // Trigger immediate scrape and wait for it
+        console.log("Configuration updated: forcing immediate scrape for new URL...");
+        try {
+            await executeScrape();
+        } catch (e) {
+            console.error("Immediate scrape failed:", e);
+        }
       }
     }
     if (typeof nextOverlayEnabled === "boolean") {
