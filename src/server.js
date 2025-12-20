@@ -179,17 +179,17 @@ async function ensureBrowser() {
         }
       }
       
-      // Wait for "Loading" to disappear (reduced timeout)
+      // Wait for "Loading" to disappear (restored safer timeout)
       try {
         await page.waitForFunction(() => {
            const t = document.body.innerText || "";
            return !t.includes("Loading") && !t.includes("Please wait");
-        }, { timeout: 5000 }); // Reduced from 30s to 5s
+        }, { timeout: 25000 }); // Increased to 25s
       } catch (e) {
         // It's okay if it times out, maybe "Loading" is part of the page text or already gone
       }
     
-      // Try to wait for actual data rows to appear (reduced timeout)
+      // Try to wait for actual data rows to appear (restored safer timeout)
       try {
         await page.waitForFunction(() => {
            // Check for specific rows or substantial content
@@ -199,7 +199,7 @@ async function ensureBrowser() {
            // Fallback: check text length if rows are not standard
            const bodyText = document.body.innerText || "";
            return bodyText.length > 200 && !bodyText.includes("Loading");
-        }, { timeout: 5000 }); // Reduced from 30s to 5s
+        }, { timeout: 25000 }); // Increased to 25s
       } catch (e) {
         // Proceed anyway, maybe we can scrape something
       }
