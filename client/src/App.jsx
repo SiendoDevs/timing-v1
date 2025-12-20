@@ -194,14 +194,18 @@ export default function App() {
             if (lapsNum > prevLapsNum || (prevLapsNum !== -1 && prevLapsNum - lapsNum > 5)) {
               prevLapsRef.current = String(lapsNum);
             }
-            // Use the stored highest value to prevent flickering text
-            if (prevLapsNum !== -1 && lapsNum < prevLapsNum && prevLapsNum - lapsNum <= 5) {
+            
+            // Check if any competitor has 0 laps (heuristic for race reset/start)
+            const anyZero = list && list.some(r => parseInt(r.laps ?? -1, 10) === 0);
+
+            // Use the stored highest value to prevent flickering text, UNLESS we see a 0-lap competitor (reset)
+            if (!anyZero && prevLapsNum !== -1 && lapsNum < prevLapsNum && prevLapsNum - lapsNum <= 5) {
                laps = prevLapsNum;
             }
           }
         }
 
-        setLapsLabel(laps ? `Vueltas: ${laps}` : "");
+        setLapsLabel(laps !== null && laps !== undefined ? `Vueltas: ${laps}` : "");
         setRows((prev) => {
           renderEffects(prev, list, nextFlag);
           return topLimit(list, limitParam);
