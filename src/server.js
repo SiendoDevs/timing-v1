@@ -68,25 +68,23 @@ async function ensureBrowser() {
 async function scrapeStandings({ debug = false, overrideUrl = null } = {}) {
   await ensureBrowser();
   const targetUrl = overrideUrl || speedhiveUrl;
-  if (overrideUrl) {
+  
+  // Check if browser is already at the target URL to avoid reloading the wrong page
+  const currentUrl = page.url();
+  const isSameUrl = currentUrl === targetUrl || currentUrl.replace(/\/$/, "") === targetUrl.replace(/\/$/, "");
+
+  if (!isSameUrl) {
     try {
+      console.log(`Navigating to ${targetUrl} (was ${currentUrl})`);
       await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 25000 });
     } catch (e) {
       console.log("Nav warning:", String(e));
     }
   } else {
-    if (!lastData.standings.length) {
-      try {
-        await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 25000 });
-      } catch (e) {
-        console.log("Nav warning:", String(e));
-      }
-    } else {
-      try {
-        await page.reload({ waitUntil: "domcontentloaded", timeout: 25000 });
-      } catch (e) {
-        console.log("Reload warning:", String(e));
-      }
+    try {
+      await page.reload({ waitUntil: "domcontentloaded", timeout: 25000 });
+    } catch (e) {
+      console.log("Reload warning:", String(e));
     }
   }
   
