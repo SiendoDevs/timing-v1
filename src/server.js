@@ -239,7 +239,13 @@ async function scrapeStandings({ debug = false, overrideUrl = null } = {}) {
         const classCellSel = getSel('.datatable-cell-class');
         
         // Check for checkered flag on individual row
-        const flagIcon = row.querySelector('.ico-flag-finish') || row.querySelector('.flag-icon-finish');
+        const flagIcon = row.querySelector('.ico-flag-finish') || 
+                         row.querySelector('.flag-icon-finish') || 
+                         row.querySelector('.fa-flag-checkered') ||
+                         row.querySelector('[class*="finish-flag"]') ||
+                         row.querySelector('[class*="flag-finish"]') ||
+                         row.querySelector('img[alt*="finish" i]') ||
+                         row.querySelector('img[src*="finish" i]');
         const hasFinishFlag = !!flagIcon;
 
         let position = safeParseInt(positionCellSel);
@@ -309,13 +315,17 @@ async function scrapeStandings({ debug = false, overrideUrl = null } = {}) {
       const bodyRows = Array.from(document.querySelectorAll('[role=\"row\"]')).filter(r => !r.querySelector('[role=\"columnheader\"]'));
       const result = [];
       for (const tr of bodyRows) {
-        const cells = Array.from(tr.querySelectorAll('[role=\"cell\"], td, div'));
+        const flagIcon = tr.querySelector('.ico-flag-finish') || 
+                         tr.querySelector('[class*="flag-finish"]') || 
+                         tr.querySelector('[class*="finish-flag"]');
+        const cells = Array.from(tr.querySelectorAll('[role="cell"], td, div'));
         function cell(i) { return i >= 0 && i < cells.length ? text(cells[i]) : ""; }
         const comp = cell(idx.comp);
         const numberMatch = comp.match(/^\s*(\d{1,4})\s+/);
         const number = numberMatch ? numberMatch[1] : "";
         const name = numberMatch ? comp.replace(numberMatch[0], "").trim() : comp;
         result.push({
+          hasFinishFlag: !!flagIcon,
           position: safeParseInt(cell(idx.pos)),
           number,
           name,
@@ -350,6 +360,9 @@ async function scrapeStandings({ debug = false, overrideUrl = null } = {}) {
       const bodyRows = Array.from(t.querySelectorAll("tbody tr"));
       const result = [];
       for (const tr of bodyRows) {
+        const flagIcon = tr.querySelector('.ico-flag-finish') || 
+                         tr.querySelector('[class*="flag-finish"]') || 
+                         tr.querySelector('[class*="finish-flag"]');
         const cells = Array.from(tr.children);
         function cell(i) { return i >= 0 && i < cells.length ? text(cells[i]) : ""; }
         const comp = cell(idx.comp);
@@ -357,6 +370,7 @@ async function scrapeStandings({ debug = false, overrideUrl = null } = {}) {
         const number = numberMatch ? numberMatch[1] : "";
         const name = numberMatch ? comp.replace(numberMatch[0], "").trim() : comp;
         result.push({
+          hasFinishFlag: !!flagIcon,
           position: safeParseInt(cell(idx.pos)),
           number,
           name,
