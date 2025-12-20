@@ -76,19 +76,6 @@ async function ensureBrowser() {
       if (process.env.PUPPETEER_EXECUTABLE_PATH) {
         launchOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
       }
-
-      // Add no-sandbox args to prevent crashes in containerized environments
-      launchOptions.args = [
-          ...(launchOptions.args || []),
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-accelerated-2d-canvas',
-          '--no-first-run',
-          '--no-zygote',
-          '--single-process',
-          '--disable-gpu'
-      ];
     
       browser = await puppeteer.launch(launchOptions);
       page = await browser.newPage();
@@ -102,6 +89,19 @@ async function ensureBrowser() {
       
       // Forward browser console logs to Node terminal
       page.on('console', msg => console.log('BROWSER LOG:', msg.text()));
+
+      // Optimize: Block unnecessary resources to speed up loading
+      await page.setRequestInterception(true);
+      page.on('request', (req) => {
+          const resourceType = req.resourceType();
+          // Allow stylesheets for correct rendering and state detection (e.g. hidden "Loading" elements)
+          // Block heavier media
+          if (['image', 'font', 'media'].includes(resourceType)) {
+              req.abort();
+          } else {
+              req.continue();
+          }
+      });
     }
     
     async function scrapeStandings({ debug = false, overrideUrl = null } = {}) {
@@ -177,29 +177,29 @@ async function ensureBrowser() {
         }
       }
       
-      // Wait for "Loading" to disappear
+      // Wait for "Loading" to disappear (reduced timeout)
       try {
         await page.waitForFunction(() => {
            const t = document.body.innerText || "";
            return !t.includes("Loading") && !t.includes("Please wait");
-        }, { timeout: 30000 });
+        }, { timeout: 5000 }); // Reduced from 30s to 5s
       } catch (e) {
-        console.log("Wait for loading-gone timeout");
+        // It's okay if it times out, maybe "Loading" is part of the page text or already gone
       }
     
-      // Try to wait for actual data rows to appear
+      // Try to wait for actual data rows to appear (reduced timeout)
       try {
         await page.waitForFunction(() => {
            // Check for specific rows or substantial content
            const rows = document.querySelectorAll('.datatable-body-row, tr, [role="row"], .role-row');
-           if (rows.length > 2) return true;
+           if (rows.length > 0) return true; // Changed > 2 to > 0 to accept even 1 row
            
            // Fallback: check text length if rows are not standard
            const bodyText = document.body.innerText || "";
-           return bodyText.length > 500 && !bodyText.includes("Loading");
-        }, { timeout: 30000 });
+           return bodyText.length > 200 && !bodyText.includes("Loading");
+        }, { timeout: 5000 }); // Reduced from 30s to 5s
       } catch (e) {
-        console.log("Wait for content timeout, proceeding anyway...");
+        // Proceed anyway, maybe we can scrape something
       }
       
       await delay(100);
