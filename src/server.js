@@ -41,7 +41,7 @@ let page = null;
 let lastData = { standings: [], sessionName: "", flagFinish: false, updatedAt: 0 };
 let lastFetchTs = 0;
 let scrapePromise = null;
-const MIN_FETCH_INTERVAL = 1000;
+const MIN_FETCH_INTERVAL = 3000;
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function ensureBrowser() {
