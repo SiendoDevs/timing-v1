@@ -25,10 +25,9 @@ RUN npm install
 # Copiar el código fuente
 COPY . .
 
-# Construir el frontend
+# Build frontend assets
 RUN npm run build
 
-# Exponer el puerto
 EXPOSE 3000
 
 # Comando de inicio

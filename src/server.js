@@ -478,13 +478,13 @@ app.post("/api/config", async (req, res) => {
 });
 
 app.get("/dashboard", (_req, res) => {
-  res.sendFile(path.resolve("public/index.html"));
+  res.sendFile(path.resolve("dist/index.html"));
 });
 app.get("/grid", (_req, res) => {
-  res.sendFile(path.resolve("public/index.html"));
+  res.sendFile(path.resolve("dist/index.html"));
 });
 app.get("/results", (_req, res) => {
-  res.sendFile(path.resolve("public/index.html"));
+  res.sendFile(path.resolve("dist/index.html"));
 });
 
 app.listen(PORT, () => {
