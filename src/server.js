@@ -69,16 +69,38 @@ async function scrapeStandings({ debug = false, overrideUrl = null } = {}) {
   await ensureBrowser();
   const targetUrl = overrideUrl || speedhiveUrl;
   if (overrideUrl) {
-    await page.goto(targetUrl, { waitUntil: "networkidle2", timeout: 30000 });
+    try {
+      await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 25000 });
+    } catch (e) {
+      console.log("Nav warning:", String(e));
+    }
   } else {
     if (!lastData.standings.length) {
-      await page.goto(targetUrl, { waitUntil: "networkidle2", timeout: 30000 });
+      try {
+        await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 25000 });
+      } catch (e) {
+        console.log("Nav warning:", String(e));
+      }
     } else {
-      await page.reload({ waitUntil: "networkidle2", timeout: 30000 });
+      try {
+        await page.reload({ waitUntil: "domcontentloaded", timeout: 25000 });
+      } catch (e) {
+        console.log("Reload warning:", String(e));
+      }
     }
   }
-  await page.waitForFunction(() => /competitor/i.test(document.body.innerText) || /laps/i.test(document.body.innerText), { timeout: 20000 }).catch(() => {});
-  await delay(1200);
+  
+  // Try to wait for actual data rows to appear
+  try {
+    await page.waitForFunction(() => {
+       const rows = document.querySelectorAll('.datatable-body-row, tr, [role="row"], .role-row');
+       return rows.length > 2;
+    }, { timeout: 10000 });
+  } catch (e) {
+    console.log("Wait for rows timeout, proceeding anyway...");
+  }
+  
+  await delay(2000);
 
   const result = await page.evaluate((wantDebug) => {
     function text(el) { return (el?.textContent || "").trim(); }
