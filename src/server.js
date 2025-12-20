@@ -91,12 +91,14 @@ async function ensureBrowser() {
       page.on('console', msg => console.log('BROWSER LOG:', msg.text()));
 
       // Optimize: Block unnecessary resources to speed up loading
+      // NOTE: Relaxing this significantly as it was breaking data loading (net::ERR_FAILED)
+      // Only blocking images for now. Fonts and media might be needed for layout/state.
       await page.setRequestInterception(true);
       page.on('request', (req) => {
           const resourceType = req.resourceType();
-          // Allow stylesheets for correct rendering and state detection (e.g. hidden "Loading" elements)
-          // Block heavier media
-          if (['image', 'font', 'media'].includes(resourceType)) {
+          // STRICTER SAFETY: Only block images. 
+          // Previous blocking of 'font' or 'media' might have caused Speedhive to fail rendering.
+          if (['image'].includes(resourceType)) {
               req.abort();
           } else {
               req.continue();
