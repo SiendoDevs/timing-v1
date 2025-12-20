@@ -152,11 +152,20 @@ export default function App() {
         if (!list.length) {
           try {
             const snap = JSON.parse(localStorage.getItem(SNAP_KEY) || "{}");
-            if (Array.isArray(snap.rows) && snap.rows.length) {
-              list = snap.rows;
-              nextTitle = snap.title || nextTitle;
-              nextFlag = !!snap.finishFlag;
-              nextLaps = snap.sessionLaps || nextLaps;
+            const snapTitle = snap.title || "";
+            const srvTitle = data.sessionName || "";
+            // Heuristic: If server reports a different session name, or if snapshot is finished but server says running,
+            // then we likely have a new session (even if empty list), so we should NOT use the snapshot.
+            const isDifferentSession = srvTitle && snapTitle && srvTitle !== snapTitle;
+            const isNewerState = snap.finishFlag && data.flagFinish === false;
+
+            if (!isDifferentSession && !isNewerState) {
+              if (Array.isArray(snap.rows) && snap.rows.length) {
+                list = snap.rows;
+                nextTitle = snap.title || nextTitle;
+                nextFlag = !!snap.finishFlag;
+                nextLaps = snap.sessionLaps || nextLaps;
+              }
             }
           } catch {}
         } else {
@@ -549,7 +558,7 @@ export default function App() {
                   const fiId = fi >= 0 ? `${safe(rows[fi]?.number)}|${safe(surname(rows[fi]?.name))}` : null;
                   const shouldAnim = fi >= 0 && (fiId !== lastFastestKey || (fiTime != null && (lastFastestTime == null || fiTime < lastFastestTime)));
                   const isFastest = fi >= 0 && i === fi;
-                  const trClass = isFastest && showFastest ? "fastest flash" : "";
+                  const trClass = isFastest && showFastest && !r.hasFinishFlag ? "fastest flash" : "";
                   
                   let metricVal = "";
                   const mode = MODES[modeIdx];

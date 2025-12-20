@@ -1,9 +1,19 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Megaphone } from "lucide-react";
 import { animate, useMount } from "react-ui-animate";
 
 export default function Announcements({ items }) {
-  const hasItems = Array.isArray(items) && items.length > 0;
+  const [visible, setVisible] = useState(false);
+  
+  useEffect(() => {
+    if (Array.isArray(items) && items.length > 0) {
+      setVisible(true);
+      const t = setTimeout(() => setVisible(false), 8000); // Hide after 8 seconds
+      return () => clearTimeout(t);
+    }
+  }, [items]);
+
+  const hasItems = visible && Array.isArray(items) && items.length > 0;
   const list = hasItems ? items.slice(0, 3) : [];
   
   const mounted = useMount(hasItems, { from: 0, enter: 1, exit: 0 });

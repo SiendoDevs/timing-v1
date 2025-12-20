@@ -1,10 +1,22 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { TrendingUp } from "lucide-react";
 import { animate, useMount } from "react-ui-animate";
 
 export default function Overtakes({ badge, who, gain }) {
   const g = typeof gain === "number" && Number.isFinite(gain) ? gain : 0;
-  const show = g > 0;
+  const [visible, setVisible] = useState(false);
+  const [lastBadge, setLastBadge] = useState(null);
+
+  useEffect(() => {
+    if (g > 0 && badge !== lastBadge) {
+      setVisible(true);
+      setLastBadge(badge);
+      const t = setTimeout(() => setVisible(false), 8000); // Hide after 8 seconds
+      return () => clearTimeout(t);
+    }
+  }, [g, badge, lastBadge]);
+
+  const show = visible && g > 0;
   
   const mounted = useMount(show, { from: 0, enter: 1, exit: 0 });
 
