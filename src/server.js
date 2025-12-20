@@ -41,7 +41,7 @@ let page = null;
 let lastData = { standings: [], sessionName: "", flagFinish: false, updatedAt: 0 };
 let lastFetchTs = 0;
 let scrapePromise = null;
-const MIN_FETCH_INTERVAL = 3000;
+const MIN_FETCH_INTERVAL = 10000; // Increased to 10 seconds to reduce load and prevent "stuck" loops
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function ensureBrowser() {
@@ -191,33 +191,44 @@ async function ensureBrowser() {
         }
       }
       
-      // Wait for "Loading" to disappear (restored safer timeout)
+      // Optimize: Check for data rows immediately. 
+      // Sometimes "Loading" overlay persists but data is already there (or hidden).
+      // If we find rows, we can skip the strict "Loading" check.
       try {
-        console.log("Waiting for 'Loading' overlay to disappear...");
-        await page.waitForFunction(() => {
-           const t = document.body.innerText || "";
-           return !t.includes("Loading") && !t.includes("Please wait");
-        }, { timeout: 45000 }); // Increased to 45s
+        const hasRows = await page.evaluate(() => {
+            const rows = document.querySelectorAll('.datatable-body-row, tr, [role="row"], .role-row');
+            return rows.length > 0;
+        });
+        
+        if (hasRows) {
+            console.log("Data rows detected immediately, skipping 'Loading' wait.");
+        } else {
+            // Wait for "Loading" to disappear (restored safer timeout)
+            try {
+                console.log("Waiting for 'Loading' overlay to disappear...");
+                await page.waitForFunction(() => {
+                const t = document.body.innerText || "";
+                return !t.includes("Loading") && !t.includes("Please wait");
+                }, { timeout: 20000 }); // Reduced to 20s to fail faster if stuck
+            } catch (e) {
+                console.log("Wait for 'Loading' timed out (continuing to check for rows)...");
+            }
+            
+            // Try to wait for actual data rows to appear
+            try {
+                console.log("Waiting for data rows...");
+                await page.waitForFunction(() => {
+                const rows = document.querySelectorAll('.datatable-body-row, tr, [role="row"], .role-row');
+                if (rows.length > 0) return true;
+                const bodyText = document.body.innerText || "";
+                return bodyText.length > 200 && !bodyText.includes("Loading");
+                }, { timeout: 25000 });
+            } catch (e) {
+                console.log("Wait for rows timed out (continuing)...");
+            }
+        }
       } catch (e) {
-        // It's okay if it times out, maybe "Loading" is part of the page text or already gone
-        console.log("Wait for 'Loading' timed out (continuing)...");
-      }
-    
-      // Try to wait for actual data rows to appear (restored safer timeout)
-      try {
-        console.log("Waiting for data rows...");
-        await page.waitForFunction(() => {
-           // Check for specific rows or substantial content
-           const rows = document.querySelectorAll('.datatable-body-row, tr, [role="row"], .role-row');
-           if (rows.length > 0) return true; // Changed > 2 to > 0 to accept even 1 row
-           
-           // Fallback: check text length if rows are not standard
-           const bodyText = document.body.innerText || "";
-           return bodyText.length > 200 && !bodyText.includes("Loading");
-        }, { timeout: 45000 }); // Increased to 45s
-      } catch (e) {
-        // Proceed anyway, maybe we can scrape something
-        console.log("Wait for rows timed out (continuing)...");
+          console.error("Error during pre-check:", e);
       }
       
       await delay(100);
