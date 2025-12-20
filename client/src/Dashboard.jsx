@@ -24,6 +24,7 @@ export default function Dashboard() {
   const [sessionName, setSessionName] = useState("");
   const [debug, setDebug] = useState(null);
   const [previewRows, setPreviewRows] = useState([]);
+  const [fullData, setFullData] = useState(null);
 
   async function loadConfig() {
     const apiOrigin = import.meta.env.VITE_API_URL || "";
@@ -37,10 +38,28 @@ export default function Dashboard() {
     setStatus("");
     try {
       const apiOrigin = import.meta.env.VITE_API_URL || "";
+      
+      // If we have valid test data for this URL, send it to initialize the server immediately
+      const initialData = (fullData && fullData.source === url) ? fullData : null;
+      
+      // Also save to LocalStorage for immediate client-side consistency (as requested)
+      if (initialData && initialData.standings && initialData.standings.length > 0) {
+          try {
+             const snap = { 
+               rows: initialData.standings, 
+               title: initialData.sessionName || "", 
+               finishFlag: !!initialData.flagFinish, 
+               sessionLaps: initialData.sessionLaps || "", 
+               announcements: initialData.announcements || [] 
+             };
+             localStorage.setItem("overlay:lastSnapshot", JSON.stringify(snap));
+          } catch (e) { console.error("LS Error:", e); }
+      }
+
       const res = await fetch(`${apiOrigin}/api/config`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ speedhiveUrl: url, overlayEnabled })
+        body: JSON.stringify({ speedhiveUrl: url, overlayEnabled, initialData })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Error");
@@ -61,6 +80,7 @@ export default function Dashboard() {
       setSessionName(data.sessionName || "");
       setDebug(data.debug || null);
       const rows = Array.isArray(data.standings) ? data.standings : [];
+      setFullData(data); // Store full data for persistence
       setPreviewRows(rows.slice(0, 12));
       setStatus("OK");
     } catch (e) {

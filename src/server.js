@@ -760,20 +760,38 @@ app.get("/api/config", (_req, res) => {
 
 app.post("/api/config", async (req, res) => {
   try {
-    const { speedhiveUrl: nextUrl, overlayEnabled: nextOverlayEnabled } = req.body || {};
+    const { speedhiveUrl: nextUrl, overlayEnabled: nextOverlayEnabled, initialData } = req.body || {};
     if (typeof nextUrl === "string" && /^https?:\/\//i.test(nextUrl)) {
       if (nextUrl !== speedhiveUrl) {
         speedhiveUrl = nextUrl;
-        // Reset lastData partially to avoid confusion, but we will immediately refill it.
-        lastData = { standings: [], sessionName: "", flagFinish: false, announcements: [], updatedAt: 0 };
-        lastFetchTs = 0;
         
-        // Trigger immediate scrape and wait for it
-        console.log("Configuration updated: forcing immediate scrape for new URL...");
-        try {
-            await executeScrape();
-        } catch (e) {
-            console.error("Immediate scrape failed:", e);
+        if (initialData && Array.isArray(initialData.standings) && initialData.standings.length > 0) {
+            console.log("Configuration updated: Using provided initial data to avoid re-scrape delay.");
+            // Adopt the data immediately
+            lastData = { 
+                standings: initialData.standings, 
+                sessionName: initialData.sessionName || "", 
+                sessionLaps: initialData.sessionLaps || "",
+                flagFinish: !!initialData.flagFinish, 
+                announcements: initialData.announcements || [], 
+                updatedAt: Date.now() 
+            };
+            lastFetchTs = Date.now();
+            
+            // Trigger background scrape (non-blocking) to keep it fresh, but don't wait for it
+            executeScrape().catch(e => console.error("Background scrape failed:", e));
+        } else {
+            // Reset lastData partially to avoid confusion, but we will immediately refill it.
+            lastData = { standings: [], sessionName: "", flagFinish: false, announcements: [], updatedAt: 0 };
+            lastFetchTs = 0;
+            
+            // Trigger immediate scrape and wait for it
+            console.log("Configuration updated: forcing immediate scrape for new URL...");
+            try {
+                await executeScrape();
+            } catch (e) {
+                console.error("Immediate scrape failed:", e);
+            }
         }
       }
     }
