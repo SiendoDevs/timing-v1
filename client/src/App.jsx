@@ -96,6 +96,8 @@ export default function App() {
   const prevLapsRef = useRef(null);
 
   const [showFastest, setShowFastest] = useState(true);
+  const [fastestLapVisible, setFastestLapVisible] = useState(false);
+  const [fastestLapData, setFastestLapData] = useState(null);
 
   useEffect(() => {
     const t = setInterval(() => {
@@ -307,6 +309,11 @@ export default function App() {
     if (fi >= 0) {
       setLastFastestKey(fiId);
       setLastFastestTime(fiTime);
+      
+      // Trigger Fastest Lap Card if it's a new record (and not initial load)
+      if (shouldAnim && lastFastestKey !== null) {
+          triggerFastestLap(nextRows[fi], fiTime);
+      }
     }
     
     if (isFlagged) {
@@ -406,7 +413,11 @@ export default function App() {
 
   function triggerLapSimulation(r, finalTimeStr, deltaMs) {
     if (lapCardVisible) return; // Busy
-    
+    // If Fastest Lap is showing, we might want to respect it or override.
+    // Let's say Fastest Lap is high priority, but Current Lap is live.
+    // If Fastest Lap is visible, we skip Current Lap for this driver unless it's the SAME driver.
+    if (fastestLapVisible) return; 
+
     const finalMs = parseTime(finalTimeStr) * 1000;
     if (!finalMs) return;
 
@@ -450,6 +461,24 @@ export default function App() {
     }, 50);
   }
 
+  function triggerFastestLap(r, timeVal) {
+      // Override any current lap card
+      endLapCard();
+      
+      setFastestLapData({
+          number: safe(r.number),
+          name: surname(r.name),
+          time: formatTimer(timeVal * 1000)
+      });
+      setFastestLapVisible(true);
+      
+      // Hide after 10 seconds
+      setTimeout(() => {
+          setFastestLapVisible(false);
+          setFastestLapData(null);
+      }, 10000);
+  }
+
   function endLapCard() {
     if (lapTickRef.current) clearInterval(lapTickRef.current);
     lapTickRef.current = null;
@@ -490,7 +519,7 @@ export default function App() {
   }
 
   const mountedOverlay = useMount(showOverlay, { from: 0, enter: 1, exit: 0 });
-  const mountedLap = useMount(lapCardVisible && showOverlay, { from: 0, enter: 1, exit: 0 });
+  const mountedLap = useMount((lapCardVisible || fastestLapVisible) && showOverlay, { from: 0, enter: 1, exit: 0 });
 
   return (
     <div>
@@ -589,32 +618,42 @@ export default function App() {
         isMounted && (
           <animate.div
             style={{ opacity: a, translateY: a.to([0, 1], ["8px", "0px"]), background: "var(--panel)", color: "var(--text)" }}
-            className="lap-card fixed right-[calc(var(--overlay-m)*1px)] bottom-[calc(var(--overlay-m)*1px)] w-[260px] rounded-xl overflow-hidden shadow-[0_8px_28px_rgba(0,0,0,0.35)] border border-white/10"
+            className={`lap-card fixed right-[calc(var(--overlay-m)*1px)] bottom-[calc(var(--overlay-m)*1px)] w-[260px] rounded-xl overflow-hidden shadow-[0_8px_28px_rgba(0,0,0,0.35)] border border-white/10 ${fastestLapVisible ? "border-purple-500/50" : ""}`}
           >
-            {lapFinishAnim && (
+            {lapCardVisible && lapFinishAnim && (
               <div className={`absolute top-0 bottom-0 left-0 animate-progress z-0 pointer-events-none ${lapDelta > 0 ? "bg-red-500/30 shadow-[0_0_30px_rgba(239,68,68,0.6)]" : "bg-green-500/30 shadow-[0_0_30px_rgba(34,197,94,0.6)]"}`} />
             )}
+            {fastestLapVisible && (
+              <div className="absolute top-0 bottom-0 left-0 bg-purple-500/20 shadow-[0_0_30px_rgba(168,85,247,0.4)] z-0 pointer-events-none" />
+            )}
+
             <div className="relative z-10 px-3 py-2 flex items-center gap-3 border-b border-white/10" style={{ background: "var(--header-bg)" }}>
-               <div className="text-black rounded-md font-extrabold px-1.5 py-0.5 min-w-[32px] text-center text-[14px] shadow-lg" style={{ background: colorFor(lapBadge, lapWho) }}>
-                  {lapBadge}
+               <div className="text-black rounded-md font-extrabold px-1.5 py-0.5 min-w-[32px] text-center text-[14px] shadow-lg" style={{ background: fastestLapVisible ? "#a855f7" : colorFor(lapBadge, lapWho) }}>
+                  {fastestLapVisible ? fastestLapData?.number : lapBadge}
                </div>
                <div className="font-extrabold uppercase italic text-[16px] leading-none truncate flex-1 text-left drop-shadow-md">
-                  {lapWho}
+                  {fastestLapVisible ? fastestLapData?.name : lapWho}
                </div>
             </div>
             <div className="relative z-10 p-3">
               <div className="flex flex-col items-center justify-center min-h-[50px]">
-                <div className={`text-[56px] font-black tabular-nums leading-none tracking-tighter text-center transition-all duration-300 italic ${lapFinishAnim ? (lapDelta > 0 ? "scale-110 text-red-400 drop-shadow-[0_0_10px_rgba(239,68,68,0.5)]" : "scale-110 text-yellow-400 drop-shadow-[0_0_10px_rgba(250,204,21,0.5)]") : ""}`}>
-                  {lapTimerText}
+                <div className={`text-[56px] font-black tabular-nums leading-none tracking-tighter text-center transition-all duration-300 italic ${fastestLapVisible ? "text-purple-400 drop-shadow-[0_0_10px_rgba(168,85,247,0.5)] scale-110" : (lapFinishAnim ? (lapDelta > 0 ? "scale-110 text-red-400 drop-shadow-[0_0_10px_rgba(239,68,68,0.5)]" : "scale-110 text-yellow-400 drop-shadow-[0_0_10px_rgba(250,204,21,0.5)]") : "")}`}>
+                  {fastestLapVisible ? fastestLapData?.time : lapTimerText}
                 </div>
               </div>
               <div className="flex items-center justify-center pt-2 mt-2 border-t border-white/10 min-h-[32px]">
-                {lapDelta !== null && Math.abs(lapDelta) < 10000 ? (
-                   <div className={`w-full text-center px-1.5 py-0.5 rounded-md text-[20px] font-bold tabular-nums leading-none tracking-tight shadow-lg italic ${lapDelta < 0 ? `bg-[#4ade80] ${lapFinishAnim ? "text-white" : "text-black"} shadow-green-900/40` : "bg-[#ef4444] text-white shadow-red-900/40"}`}>
-                     {lapDelta > 0 ? "+" : ""}{(lapDelta / 1000).toFixed(2)}
-                   </div>
+                {fastestLapVisible ? (
+                    <div className="w-full text-center px-1.5 py-0.5 rounded-md text-[18px] font-bold leading-none tracking-tight shadow-lg italic bg-purple-600 text-white shadow-purple-900/40">
+                        RÉCORD DE VUELTA
+                    </div>
                 ) : (
-                   <div className="text-white/20 text-[10px] font-bold italic uppercase tracking-widest">NO DELTA</div>
+                    lapDelta !== null && Math.abs(lapDelta) < 10000 ? (
+                    <div className={`w-full text-center px-1.5 py-0.5 rounded-md text-[20px] font-bold tabular-nums leading-none tracking-tight shadow-lg italic ${lapDelta < 0 ? `bg-[#4ade80] ${lapFinishAnim ? "text-white" : "text-black"} shadow-green-900/40` : "bg-[#ef4444] text-white shadow-red-900/40"}`}>
+                        {lapDelta > 0 ? "+" : ""}{(lapDelta / 1000).toFixed(2)}
+                    </div>
+                    ) : (
+                    <div className="text-white/20 text-[10px] font-bold italic uppercase tracking-widest">NO DELTA</div>
+                    )
                 )}
               </div>
             </div>
