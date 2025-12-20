@@ -103,7 +103,7 @@ async function ensureBrowser() {
               // Update: NOT blocking stylesheets as it might hide elements needed for detection (e.g. display:none)
           }
           
-          if (['image', 'media', 'font'].includes(resourceType)) {
+          if (['image', 'media'].includes(resourceType)) {
               req.abort();
           } else {
               req.continue();
@@ -193,16 +193,19 @@ async function ensureBrowser() {
       
       // Wait for "Loading" to disappear (restored safer timeout)
       try {
+        console.log("Waiting for 'Loading' overlay to disappear...");
         await page.waitForFunction(() => {
            const t = document.body.innerText || "";
            return !t.includes("Loading") && !t.includes("Please wait");
-        }, { timeout: 25000 }); // Increased to 25s
+        }, { timeout: 45000 }); // Increased to 45s
       } catch (e) {
         // It's okay if it times out, maybe "Loading" is part of the page text or already gone
+        console.log("Wait for 'Loading' timed out (continuing)...");
       }
     
       // Try to wait for actual data rows to appear (restored safer timeout)
       try {
+        console.log("Waiting for data rows...");
         await page.waitForFunction(() => {
            // Check for specific rows or substantial content
            const rows = document.querySelectorAll('.datatable-body-row, tr, [role="row"], .role-row');
@@ -211,9 +214,10 @@ async function ensureBrowser() {
            // Fallback: check text length if rows are not standard
            const bodyText = document.body.innerText || "";
            return bodyText.length > 200 && !bodyText.includes("Loading");
-        }, { timeout: 25000 }); // Increased to 25s
+        }, { timeout: 45000 }); // Increased to 45s
       } catch (e) {
         // Proceed anyway, maybe we can scrape something
+        console.log("Wait for rows timed out (continuing)...");
       }
       
       await delay(100);
@@ -563,10 +567,9 @@ async function ensureBrowser() {
     let source = null;
     let payload = extractFromDataTable();
     if (payload) source = "datatable";
-    // Debug output for progress scraping
-    if (payload && payload.length > 0) {
-       console.log("DEBUG PROGRESS:", payload.map(r => r.lapProgress).filter(p => p).slice(0, 5));
-    }
+    // Debug output for progress scraping (removed spammy log)
+    // if (payload && payload.length > 0) { ... }
+    
     if (!payload) { payload = extractFromRoles(); if (payload) source = "roles"; }
     if (!payload) { payload = extractFromTableTag(); if (payload) source = "table"; }
     if (!payload) { payload = extractFromNext(); if (payload) source = "next"; }
