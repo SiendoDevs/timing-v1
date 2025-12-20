@@ -39,7 +39,8 @@ app.use(express.static("dist"));
 let browser = null;
 let page = null;
 let scrapeCount = 0; // Track number of scrapes to restart browser periodically
-const MAX_SCRAPES_BEFORE_RESTART = 20; // Restart every 20 scrapes to clear memory leaks
+const MAX_SCRAPES_BEFORE_RESTART = 5; // Restart every 5 scrapes to prevent OOM
+const MEMORY_WARNING_THRESHOLD_MB = 400; // Restart if usage > 400MB
 
 let lastData = { standings: [], sessionName: "", flagFinish: false, updatedAt: 0 };
 let lastFetchTs = 0;
@@ -48,6 +49,16 @@ const MIN_FETCH_INTERVAL = 10000; // Increased to 10 seconds to reduce load and 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function ensureBrowser() {
+  // Check memory usage
+  const used = process.memoryUsage().rss / 1024 / 1024;
+  if (used > MEMORY_WARNING_THRESHOLD_MB) {
+     console.log(`High memory usage (${Math.round(used)}MB). Restarting browser...`);
+     if (browser) try { await browser.close(); } catch(e) {}
+     browser = null;
+     page = null;
+     scrapeCount = 0;
+  }
+  
   // Check if we need to restart due to scrape count
   if (browser && scrapeCount >= MAX_SCRAPES_BEFORE_RESTART) {
       console.log(`Browser reached ${scrapeCount} scrapes. Restarting to free memory...`);
@@ -89,7 +100,13 @@ async function ensureBrowser() {
       "--enable-features=NetworkService,NetworkServiceInProcess",
       "--force-color-profile=srgb",
       "--metrics-recording-only",
-      "--mute-audio"
+      "--mute-audio",
+      "--no-default-browser-check",
+      "--no-pings",
+      "--password-store=basic",
+      "--use-gl=swiftshader",
+      "--window-size=1280,720",
+      "--disable-site-isolation-trials"
     ]
   };
 
@@ -111,7 +128,7 @@ async function ensureBrowser() {
       page.setDefaultTimeout(60000);
 
       await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36");
-      await page.setViewport({ width: 1920, height: 1080 });
+      await page.setViewport({ width: 1280, height: 720 });
       
       // Forward browser console logs to Node terminal
       page.on('console', msg => console.log('BROWSER LOG:', msg.text()));
