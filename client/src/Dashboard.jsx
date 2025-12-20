@@ -26,7 +26,7 @@ export default function Dashboard() {
   const [previewRows, setPreviewRows] = useState([]);
 
   async function loadConfig() {
-    const apiOrigin = import.meta.env.VITE_API_URL || "https://timing-v1.onrender.com";
+    const apiOrigin = import.meta.env.VITE_API_URL || "";
     const res = await fetch(`${apiOrigin}/api/config`);
     const data = await res.json();
     setUrl(data.speedhiveUrl || "");
@@ -36,7 +36,7 @@ export default function Dashboard() {
     setSaving(true);
     setStatus("");
     try {
-      const apiOrigin = import.meta.env.VITE_API_URL || "https://timing-v1.onrender.com";
+      const apiOrigin = import.meta.env.VITE_API_URL || "";
       const res = await fetch(`${apiOrigin}/api/config`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -54,7 +54,7 @@ export default function Dashboard() {
   async function probar() {
     setStatus("Probando…");
     try {
-      const apiOrigin = import.meta.env.VITE_API_URL || "https://timing-v1.onrender.com";
+      const apiOrigin = import.meta.env.VITE_API_URL || "";
       const res = await fetch(`${apiOrigin}/api/standings?debug=1&force=1&url=${encodeURIComponent(url)}`);
       const data = await res.json();
       setLastUpdated(data.updatedAt || Date.now());
@@ -71,7 +71,7 @@ export default function Dashboard() {
     setSaving(true);
     setStatus("");
     try {
-      const apiOrigin = import.meta.env.VITE_API_URL || "https://timing-v1.onrender.com";
+      const apiOrigin = import.meta.env.VITE_API_URL || "";
       const res = await fetch(`${apiOrigin}/api/config`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -95,6 +95,13 @@ export default function Dashboard() {
     document.title = "Livetiming OBS Overlay | Dashboard";
     loadConfig();
   }, []);
+
+  function abrirPregrilla() {
+    window.open("/grid", "_blank");
+  }
+  function abrirResultados() {
+    window.open("/results", "_blank");
+  }
 
   return (
     <div className="min-h-screen" style={{ background: "var(--bg)", color: "var(--text)" }}>
@@ -146,10 +153,10 @@ export default function Dashboard() {
               <div>Pregrilla y Resultados</div>
             </div>
             <div className="p-4">
-              <button onClick={() => window.open("/grid", "_blank")} className="px-4 py-3 font-extrabold inline-flex items-center justify-center rounded-md text-sm bg-white/10 hover:bg-white/15 border border-white/10">
+              <button onClick={abrirPregrilla} className="px-4 py-3 font-extrabold inline-flex items-center justify-center rounded-md text-sm bg-white/10 hover:bg-white/15 border border-white/10">
                 Abrir pregrilla
               </button>
-              <button onClick={() => window.open("/results", "_blank")} className="ml-2 px-4 py-3 font-extrabold inline-flex items-center justify-center rounded-md text-sm bg-white/10 hover:bg-white/15 border border-white/10">
+              <button onClick={abrirResultados} className="ml-2 px-4 py-3 font-extrabold inline-flex items-center justify-center rounded-md text-sm bg-white/10 hover:bg-white/15 border border-white/10">
                 Abrir resultados
               </button>
             </div>

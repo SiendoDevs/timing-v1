@@ -41,7 +41,7 @@ export default function Grid() {
     load();
     const t = setInterval(load, 1000);
     return () => { alive = false; clearInterval(t); };
-  }, [limitParam]);
+  }, []);
 
   useEffect(() => {
     const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));

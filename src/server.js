@@ -2,9 +2,25 @@ import express from "express";
 import cors from "cors";
 import puppeteer from "puppeteer";
 import path from "node:path";
+import fs from "node:fs";
 
-let speedhiveUrl = process.env.SPEEDHIVE_URL || "https://speedhive.mylaps.com/livetiming/740C03359A4AAD75-2147489423/active";
+let speedhiveUrl = process.env.SPEEDHIVE_URL || "";
 let overlayEnabled = true;
+const CONFIG_FILE = path.resolve("config.json");
+
+// Load config on startup
+try {
+  if (fs.existsSync(CONFIG_FILE)) {
+    const raw = fs.readFileSync(CONFIG_FILE, "utf-8");
+    const conf = JSON.parse(raw);
+    if (conf.speedhiveUrl) speedhiveUrl = conf.speedhiveUrl;
+    if (typeof conf.overlayEnabled === 'boolean') overlayEnabled = conf.overlayEnabled;
+    console.log("Loaded config:", { speedhiveUrl, overlayEnabled });
+  }
+} catch (e) {
+  console.error("Error loading config:", e);
+}
+
 const PORT = process.env.PORT || 3000;
 
 const app = express();
@@ -71,17 +87,26 @@ async function ensureBrowser() {
 }
 
 async function scrapeStandings({ debug = false, overrideUrl = null } = {}) {
-  await ensureBrowser();
   const targetUrl = overrideUrl || speedhiveUrl;
+  if (!targetUrl) {
+    return { standings: [], sessionName: "", sessionLaps: "", flagFinish: false, announcements: [], updatedAt: Date.now() };
+  }
+  
+  await ensureBrowser();
   
   // Check if browser is already at the target URL to avoid reloading the wrong page
   const currentUrl = page.url();
-  const isSameUrl = currentUrl === targetUrl || currentUrl.replace(/\/$/, "") === targetUrl.replace(/\/$/, "");
+  // Normalize URLs for comparison (ignore trailing slash, query params, etc if needed)
+  // But strict comparison is safer to ensure we switch sessions immediately.
+  const isSameUrl = currentUrl === targetUrl;
 
   if (!isSameUrl) {
     try {
       console.log(`Navigating to ${targetUrl} (was ${currentUrl})`);
+      // When switching URLs, we force a full navigation
       await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 25000 });
+      // Reset last data on URL switch to avoid showing old session data
+      lastData = { standings: [], sessionName: "", flagFinish: false, updatedAt: 0 };
     } catch (e) {
       console.log("Nav warning:", String(e));
     }
@@ -613,6 +638,14 @@ app.post("/api/config", async (req, res) => {
     if (typeof nextOverlayEnabled === "boolean") {
       overlayEnabled = nextOverlayEnabled;
     }
+    
+    // Persist config
+    try {
+      fs.writeFileSync(CONFIG_FILE, JSON.stringify({ speedhiveUrl, overlayEnabled }));
+    } catch (e) {
+      console.error("Error saving config:", e);
+    }
+
     res.json({ ok: true, speedhiveUrl, overlayEnabled });
   } catch (e) {
     res.status(500).json({ error: String(e) });

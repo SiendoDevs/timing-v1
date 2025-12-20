@@ -45,7 +45,7 @@ export default function Results() {
     load();
     const t = setInterval(load, 1000);
     return () => { alive = false; clearInterval(t); };
-  }, [limitParam]);
+  }, []);
 
   const top3 = rows.slice(0, 3);
   const restAll = rows.slice(3);

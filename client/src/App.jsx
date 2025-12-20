@@ -139,7 +139,7 @@ export default function App() {
     let mounted = true;
     async function load() {
       try {
-        const apiOrigin = import.meta.env.VITE_API_URL || "https://timing-v1.onrender.com";
+        const apiOrigin = import.meta.env.VITE_API_URL || "";
         const res = await fetch(`${apiOrigin}/api/standings`);
         const data = await res.json();
         if (!mounted) return;
