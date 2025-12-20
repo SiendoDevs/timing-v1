@@ -58,7 +58,7 @@ async function ensureBrowser() {
 
   browser = await puppeteer.launch(launchOptions);
   page = await browser.newPage();
-  await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+  await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36");
   await page.setViewport({ width: 1920, height: 1080 });
   
   // Forward browser console logs to Node terminal
@@ -93,11 +93,11 @@ async function scrapeStandings({ debug = false, overrideUrl = null } = {}) {
   // Try to wait for actual data rows to appear
   try {
     await page.waitForFunction(() => {
-       const rows = document.querySelectorAll('.datatable-body-row, tr, [role="row"], .role-row');
-       return rows.length > 2;
-    }, { timeout: 10000 });
+       const bodyText = document.body.innerText || "";
+       return bodyText.length > 200;
+    }, { timeout: 15000 });
   } catch (e) {
-    console.log("Wait for rows timeout, proceeding anyway...");
+    console.log("Wait for content timeout, proceeding anyway...");
   }
   
   await delay(2000);
@@ -478,7 +478,8 @@ async function scrapeStandings({ debug = false, overrideUrl = null } = {}) {
         idx: payload?.idx || {}, 
         stats: stats(rows),
         pageTitle: document.title,
-        bodyPreview: document.body.innerText.substring(0, 2000)
+        bodyPreview: document.body.innerText.substring(0, 2000),
+        htmlPreview: document.documentElement.outerHTML.substring(0, 2000)
     } : null;
     return { rows, sessionName, sessionLaps, flagFinish, announcements, debug: dbg };
   }, debug === true);
