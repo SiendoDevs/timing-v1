@@ -29,7 +29,12 @@ const MIN_FETCH_INTERVAL = 1000;
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function ensureBrowser() {
-  if (browser && page) return;
+  if (browser && page) {
+    if (browser.isConnected()) return;
+    try { await browser.close(); } catch(e) {}
+    browser = null;
+    page = null;
+  }
   
   // Opciones de lanzamiento para Puppeteer en Render
   const launchOptions = {
@@ -84,12 +89,15 @@ async function scrapeStandings({ debug = false, overrideUrl = null } = {}) {
     // If already on the page, don't reload to preserve SPA state and avoid delay.
     // However, we must verify the page is not stuck/broken.
     try {
-      const isHealthy = await page.evaluate(() => {
-         const t = document.body.innerText || "";
-         if (t.includes("Loading") || t.includes("Please wait")) return false;
-         const rows = document.querySelectorAll('.datatable-body-row, tr, [role="row"], .role-row');
-         return rows.length > 2;
-      });
+      const isHealthy = await Promise.race([
+          page.evaluate(() => {
+            const t = document.body.innerText || "";
+            if (t.includes("Loading") || t.includes("Please wait")) return false;
+            const rows = document.querySelectorAll('.datatable-body-row, tr, [role="row"], .role-row');
+            return rows.length > 2;
+          }),
+          new Promise((_, r) => setTimeout(() => r(new Error("Health check timeout")), 5000))
+      ]);
       if (!isHealthy) {
         console.log("Page appears stuck or empty, forcing reload...");
         await page.reload({ waitUntil: "domcontentloaded", timeout: 25000 });
@@ -127,7 +135,8 @@ async function scrapeStandings({ debug = false, overrideUrl = null } = {}) {
   
   await delay(100);
 
-  const result = await page.evaluate((wantDebug) => {
+  const result = await Promise.race([
+    page.evaluate((wantDebug) => {
     function text(el) { return (el?.textContent || "").trim(); }
     function safeParseInt(v) { const n = parseInt(String(v).replace(/[^\d]/g, "")); return Number.isFinite(n) ? n : null; }
     
@@ -521,7 +530,9 @@ async function scrapeStandings({ debug = false, overrideUrl = null } = {}) {
         htmlPreview: document.documentElement.outerHTML.substring(0, 2000)
     } : null;
     return { rows, sessionName, sessionLaps, flagFinish, announcements, debug: dbg };
-  }, debug === true);
+  }, debug === true),
+  new Promise((_, reject) => setTimeout(() => reject(new Error("Scrape evaluation timeout")), 15000))
+  ]);
   if (!overrideUrl) {
     lastData = { standings: result.rows, sessionName: result.sessionName || "", sessionLaps: result.sessionLaps || "", flagFinish: !!result.flagFinish, announcements: result.announcements || [], updatedAt: Date.now() };
     lastFetchTs = Date.now();
@@ -556,8 +567,12 @@ app.get("/api/standings", async (_req, res) => {
 
     // 3. Start new scrape (serialized)
     // Double check scrapePromise to handle race conditions if multiple requests waited
+    let waitCount = 0;
     while (scrapePromise) {
-       try { await scrapePromise; } catch (e) {}
+       if (waitCount++ > 50) { // Wait max 5 seconds (50 * 100ms)
+          throw new Error("Scrape queue timeout - previous scrape stuck");
+       }
+       try { await Promise.race([scrapePromise, delay(100)]); } catch (e) {}
     }
 
     const myPromise = scrapeStandings({ debug, overrideUrl: testUrl });
