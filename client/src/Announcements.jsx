@@ -14,7 +14,7 @@ export default function Announcements({ items }) {
   }, [items]);
 
   const hasItems = visible && Array.isArray(items) && items.length > 0;
-  const list = hasItems ? items.slice(0, 3) : [];
+  const list = hasItems ? items.slice(0, 1) : [];
   
   const mounted = useMount(hasItems, { from: 0, enter: 1, exit: 0 });
 
