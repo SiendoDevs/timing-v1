@@ -69,12 +69,12 @@ async function scrapeStandings({ debug = false, overrideUrl = null } = {}) {
   await ensureBrowser();
   const targetUrl = overrideUrl || speedhiveUrl;
   if (overrideUrl) {
-    await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
+    await page.goto(targetUrl, { waitUntil: "networkidle2", timeout: 30000 });
   } else {
     if (!lastData.standings.length) {
-      await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
+      await page.goto(targetUrl, { waitUntil: "networkidle2", timeout: 30000 });
     } else {
-      await page.reload({ waitUntil: "domcontentloaded", timeout: 30000 });
+      await page.reload({ waitUntil: "networkidle2", timeout: 30000 });
     }
   }
   await page.waitForFunction(() => /competitor/i.test(document.body.innerText) || /laps/i.test(document.body.innerText), { timeout: 20000 }).catch(() => {});
@@ -390,12 +390,74 @@ async function scrapeStandings({ debug = false, overrideUrl = null } = {}) {
     if (!payload) { payload = extractFromRoles(); if (payload) source = "roles"; }
     if (!payload) { payload = extractFromTableTag(); if (payload) source = "table"; }
     if (!payload) { payload = extractFromNext(); if (payload) source = "next"; }
+    
+    // Generic fallback for list-based layouts
+    if (!payload) {
+      function extractGenericList() {
+         // Look for common row containers
+         const candidates = Array.from(document.querySelectorAll('div, li, tr'));
+         const potentialRows = [];
+         
+         for (const el of candidates) {
+            // Check if element has children that look like number and name
+            const textContent = text(el);
+            // Must start with a number (position)
+            if (!/^\d+\s+[A-Za-z]/.test(textContent)) continue;
+            // Must have reasonable length
+            if (textContent.length < 5 || textContent.length > 200) continue;
+            
+            // Try to split by common delimiters or spacing
+            const parts = textContent.split(/\s+/);
+            if (parts.length < 3) continue;
+            
+            // Very naive check: if it contains a time-like string
+            if (!/\d+:\d+\.\d+/.test(textContent) && !/\d+\.\d+/.test(textContent) && !/Laps/.test(textContent)) continue;
+
+            // Avoid header-like rows
+            if (/Pos|Name|Gap|Diff/i.test(textContent)) continue;
+
+            potentialRows.push({
+               position: parseInt(parts[0]) || 0,
+               number: parts[1] || "",
+               name: parts.slice(2, 5).join(" "), // heuristic
+               laps: 0,
+               lastLap: "",
+               diff: "",
+               gap: "",
+               totalTime: "",
+               bestLap: ""
+            });
+            if (potentialRows.length > 50) break; // limit
+         }
+         // Filter to only keep if we found a sequence (e.g. 1, 2, 3...)
+         if (potentialRows.length >= 3) {
+             // sort by position to see if it makes sense
+             potentialRows.sort((a,b) => a.position - b.position);
+             const isSequential = potentialRows.slice(0, 3).every((r, i) => r.position === i + 1 || r.position === i + 2); // lenient
+             if (isSequential) return potentialRows;
+         }
+         return null;
+      }
+      const generic = extractGenericList();
+      if (generic) {
+          payload = generic;
+          source = "generic_list_scan";
+      }
+    }
+
     const rows = wantDebug ? (payload?.rows || []) : (payload || []);
     const sessionName = extractSessionName();
     const sessionLaps = extractSessionLaps();
     const flagFinish = extractFlagFinish();
     const announcements = extractAnnouncements();
-    const dbg = wantDebug ? { sourceMethod: source, headers: payload?.headers || [], idx: payload?.idx || {}, stats: stats(rows) } : null;
+    const dbg = wantDebug ? { 
+        sourceMethod: source, 
+        headers: payload?.headers || [], 
+        idx: payload?.idx || {}, 
+        stats: stats(rows),
+        pageTitle: document.title,
+        bodyPreview: document.body.innerText.substring(0, 2000)
+    } : null;
     return { rows, sessionName, sessionLaps, flagFinish, announcements, debug: dbg };
   }, debug === true);
   if (!overrideUrl) {
