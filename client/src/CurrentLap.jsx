@@ -3,7 +3,7 @@ import React from "react";
 export default function CurrentLap({ finishFlag, lapsLabel, lapsChangeAnim }) {
   return (
     <div 
-      className={`absolute top-0 left-full ml-3 rounded-xl overflow-hidden shadow-[0_8px_28px_rgba(0,0,0,0.35)] backdrop-blur-sm h-[45px] flex items-center px-5 font-bold tracking-tight whitespace-nowrap border border-white/10 ${finishFlag ? "w-[140px]" : ""}`}
+      className={`rounded-xl overflow-hidden shadow-[0_8px_28px_rgba(0,0,0,0.35)] backdrop-blur-sm h-[45px] flex items-center px-5 font-bold tracking-tight whitespace-nowrap border border-white/10 ${finishFlag ? "w-[140px]" : ""}`}
       style={finishFlag ? {
         backgroundColor: "#fff",
         backgroundImage: `repeating-conic-gradient(#000 0% 25%, #fff 0% 50%)`,

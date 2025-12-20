@@ -585,13 +585,13 @@ export default function App() {
               </tbody>
             </table>
           </div>
-          {lapsLabel && (
-            <CurrentLap finishFlag={finishFlag} lapsLabel={lapsLabel} lapsChangeAnim={lapsChangeAnim} />
-          )}
-          {lapsLabel && (
+          <div className="absolute top-0 left-full ml-3 flex gap-3 items-start">
+            {lapsLabel && (
+              <CurrentLap finishFlag={finishFlag} lapsLabel={lapsLabel} lapsChangeAnim={lapsChangeAnim} />
+            )}
             <Overtakes badge={bestOver?.badge} who={bestOver?.who} gain={bestOver?.gain || 0} />
-          )}
-          <Announcements items={annItems} />
+            <Announcements items={annItems} />
+          </div>
         </div>
         </animate.div>
       ))}
