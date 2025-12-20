@@ -81,11 +81,9 @@ async function scrapeStandings({ debug = false, overrideUrl = null } = {}) {
       console.log("Nav warning:", String(e));
     }
   } else {
-    try {
-      await page.reload({ waitUntil: "domcontentloaded", timeout: 25000 });
-    } catch (e) {
-      console.log("Reload warning:", String(e));
-    }
+    // If already on the page, don't reload to preserve SPA state and avoid delay.
+    // We assume the page updates itself via WebSocket/AJAX.
+    // console.log("Page already open, scraping live DOM...");
   }
   
   // Wait for "Loading" to disappear
@@ -113,7 +111,7 @@ async function scrapeStandings({ debug = false, overrideUrl = null } = {}) {
     console.log("Wait for content timeout, proceeding anyway...");
   }
   
-  await delay(500);
+  await delay(100);
 
   const result = await page.evaluate((wantDebug) => {
     function text(el) { return (el?.textContent || "").trim(); }
@@ -578,13 +576,6 @@ app.post("/api/config", async (req, res) => {
         speedhiveUrl = nextUrl;
         lastData = { standings: [], sessionName: "", flagFinish: false, updatedAt: 0 };
         lastFetchTs = 0;
-        
-        // Trigger background scrape immediately if URL changed
-        if (!inFlight) {
-             inFlight = true;
-             console.log("Triggering background scrape due to config change...");
-             scrapeStandings().finally(() => { inFlight = false; });
-        }
       }
     }
     if (typeof nextOverlayEnabled === "boolean") {
