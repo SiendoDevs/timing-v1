@@ -630,15 +630,20 @@ async function ensureBrowser() {
   new Promise((_, reject) => setTimeout(() => reject(new Error("Scrape evaluation timeout")), 60000))
   ]);
   if (!overrideUrl) {
-    // Logic to prevent flickering: if scrape returns empty but we have previous data for the SAME session, keep the old data.
     const isEmpty = !result.rows || result.rows.length === 0;
-    const hasOldData = lastData && lastData.standings && lastData.standings.length > 0;
-    const sameSession = (result.sessionName || "") === (lastData.sessionName || "");
-    // If we have no session name in result (scrape failed partially?), assume same session.
-    const ambiguousSession = !result.sessionName;
+    const hasOldData = lastData.standings && lastData.standings.length > 0;
 
-    if (isEmpty && hasOldData && (sameSession || ambiguousSession)) {
-        console.log("Scrape returned empty results for same/ambiguous session - preserving previous data.");
+    // Helper to determine if we are likely in the same session despite minor scrape glitches
+    const cleanName = (n) => (n || "").toLowerCase().replace(/\s+/g, "").replace(/speedhive|mylaps|loading/gi, "").replace(/lap\d+/gi, "").replace(/vuelta\d+/gi, "").replace(/\d+\/\d+/g, "");
+    const s1 = cleanName(result.sessionName);
+    const s2 = cleanName(lastData.sessionName);
+    // If one of them is empty/generic (after clean), we assume continuity. 
+    // Only return false if both are substantial and different.
+    const isDifferentSession = s1 && s2 && s1 !== s2;
+    const sameSession = !isDifferentSession;
+
+    if (isEmpty && hasOldData && sameSession) {
+        console.log("Scrape returned empty results for same session - preserving previous data.");
         // Update timestamp to show we are still alive
         lastData.updatedAt = Date.now();
         // Update announcements if available, otherwise keep old ones (implicit in returning lastData)
@@ -652,11 +657,17 @@ async function ensureBrowser() {
     // If we have valid rows (not empty), but announcements are empty, 
     // and it's the same session, preserve the old announcements.
     let finalAnnouncements = result.announcements || [];
-    if (finalAnnouncements.length === 0 && (sameSession || ambiguousSession) && lastData.announcements && lastData.announcements.length > 0) {
+    if (finalAnnouncements.length === 0 && sameSession && lastData.announcements && lastData.announcements.length > 0) {
        finalAnnouncements = lastData.announcements;
     }
+    
+    // Also stabilize Session Name if the new one is missing/generic but we had a good one
+    let finalSessionName = result.sessionName || "";
+    if ((!finalSessionName || /speedhive|mylaps|loading/i.test(finalSessionName)) && lastData.sessionName) {
+        finalSessionName = lastData.sessionName;
+    }
 
-    lastData = { standings: result.rows, sessionName: result.sessionName || "", sessionLaps: result.sessionLaps || "", flagFinish: !!result.flagFinish, announcements: finalAnnouncements, updatedAt: Date.now() };
+    lastData = { standings: result.rows, sessionName: finalSessionName, sessionLaps: result.sessionLaps || "", flagFinish: !!result.flagFinish, announcements: finalAnnouncements, updatedAt: Date.now() };
     lastFetchTs = Date.now();
     return lastData;
   } else {
