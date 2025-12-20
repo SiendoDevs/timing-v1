@@ -24,7 +24,7 @@ let browser = null;
 let page = null;
 let lastData = { standings: [], sessionName: "", flagFinish: false, updatedAt: 0 };
 let lastFetchTs = 0;
-let inFlight = false;
+let scrapePromise = null;
 const MIN_FETCH_INTERVAL = 1000;
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -82,8 +82,22 @@ async function scrapeStandings({ debug = false, overrideUrl = null } = {}) {
     }
   } else {
     // If already on the page, don't reload to preserve SPA state and avoid delay.
-    // We assume the page updates itself via WebSocket/AJAX.
-    // console.log("Page already open, scraping live DOM...");
+    // However, we must verify the page is not stuck/broken.
+    try {
+      const isHealthy = await page.evaluate(() => {
+         const t = document.body.innerText || "";
+         if (t.includes("Loading") || t.includes("Please wait")) return false;
+         const rows = document.querySelectorAll('.datatable-body-row, tr, [role="row"], .role-row');
+         return rows.length > 2;
+      });
+      if (!isHealthy) {
+        console.log("Page appears stuck or empty, forcing reload...");
+        await page.reload({ waitUntil: "domcontentloaded", timeout: 25000 });
+      }
+    } catch (e) {
+      console.log("Health check failed, reloading:", String(e));
+      try { await page.reload({ waitUntil: "domcontentloaded", timeout: 25000 }); } catch (ee) {}
+    }
   }
   
   // Wait for "Loading" to disappear
@@ -522,39 +536,42 @@ app.get("/api/standings", async (_req, res) => {
     const debug = _req.query?.debug === "1";
     const testUrl = typeof _req.query?.url === "string" ? _req.query.url : null;
     const force = _req.query?.force === "1";
-    if (!testUrl && inFlight && !debug) {
-      res.json({ source: speedhiveUrl, updatedAt: lastData.updatedAt || Date.now(), sessionName: lastData.sessionName || "", sessionLaps: lastData.sessionLaps || "", flagFinish: !!lastData.flagFinish, standings: lastData.standings || [], announcements: lastData.announcements || [] });
-      return;
-    }
+
+    // 1. Check cache for standard polling requests (no debug/force/testUrl)
     if (!testUrl && !force && !debug && Date.now() - lastFetchTs < MIN_FETCH_INTERVAL && lastData.standings.length) {
       res.json({ source: speedhiveUrl, updatedAt: lastData.updatedAt, sessionName: lastData.sessionName || "", sessionLaps: lastData.sessionLaps || "", flagFinish: !!lastData.flagFinish, standings: lastData.standings, announcements: lastData.announcements || [] });
       return;
     }
-    if (testUrl) {
-      const data = await scrapeStandings({ debug, overrideUrl: testUrl });
-      res.json({ source: testUrl, updatedAt: data.updatedAt, sessionName: data.sessionName || "", sessionLaps: data.sessionLaps || "", flagFinish: !!data.flagFinish, standings: Array.isArray(data.standings) ? data.standings : [], announcements: data.announcements || [], debug: data.debug });
-      return;
+
+    // 2. If a scrape is already running...
+    if (scrapePromise) {
+      if (!testUrl && !force && !debug) {
+         // Standard poll: return cached data immediately if busy
+         res.json({ source: speedhiveUrl, updatedAt: lastData.updatedAt || Date.now(), sessionName: lastData.sessionName || "", sessionLaps: lastData.sessionLaps || "", flagFinish: !!lastData.flagFinish, standings: lastData.standings || [], announcements: lastData.announcements || [] });
+         return;
+      }
+      // Debug/Force/TestUrl: Wait for the current scrape to finish to avoid race conditions
+      try { await scrapePromise; } catch (e) {}
     }
-    if (!lastData.standings.length || force) {
-      if (debug) {
-        inFlight = true;
-        const data = await scrapeStandings({ debug: true });
-        inFlight = false;
-        res.json({ source: speedhiveUrl, updatedAt: data.updatedAt, sessionName: data.sessionName || "", flagFinish: !!data.flagFinish, standings: Array.isArray(data.standings) ? data.standings : [], announcements: data.announcements || [], debug: data.debug });
-        return;
-      } else {
-        inFlight = true;
-        scrapeStandings().finally(() => { inFlight = false; });
-        res.json({ source: speedhiveUrl, updatedAt: Date.now(), sessionName: lastData.sessionName || "", flagFinish: !!lastData.flagFinish, standings: [], announcements: [] });
-        return;
+
+    // 3. Start new scrape (serialized)
+    // Double check scrapePromise to handle race conditions if multiple requests waited
+    while (scrapePromise) {
+       try { await scrapePromise; } catch (e) {}
+    }
+
+    const myPromise = scrapeStandings({ debug, overrideUrl: testUrl });
+    scrapePromise = myPromise;
+
+    try {
+      const data = await myPromise;
+      res.json({ source: testUrl || speedhiveUrl, updatedAt: data.updatedAt, sessionName: data.sessionName || "", sessionLaps: data.sessionLaps || "", flagFinish: !!data.flagFinish, standings: Array.isArray(data.standings) ? data.standings : [], announcements: data.announcements || [], debug: data.debug });
+    } finally {
+      if (scrapePromise === myPromise) {
+        scrapePromise = null;
       }
     }
-    inFlight = true;
-    const data = await scrapeStandings({ debug });
-    inFlight = false;
-    res.json({ source: speedhiveUrl, updatedAt: data.updatedAt, sessionName: data.sessionName || "", flagFinish: !!data.flagFinish, standings: Array.isArray(data.standings) ? data.standings : [], announcements: data.announcements || [], debug: data.debug });
   } catch (err) {
-    inFlight = false;
     console.error("Scrape Error:", err);
     let errorMsg = String(err);
     if (errorMsg.includes("Could not find Chrome")) {
