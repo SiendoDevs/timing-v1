@@ -630,6 +630,24 @@ async function ensureBrowser() {
   new Promise((_, reject) => setTimeout(() => reject(new Error("Scrape evaluation timeout")), 60000))
   ]);
   if (!overrideUrl) {
+    // Logic to prevent flickering: if scrape returns empty but we have previous data for the SAME session, keep the old data.
+    const isEmpty = !result.rows || result.rows.length === 0;
+    const hasOldData = lastData && lastData.standings && lastData.standings.length > 0;
+    const sameSession = (result.sessionName || "") === (lastData.sessionName || "");
+    // If we have no session name in result (scrape failed partially?), assume same session.
+    const ambiguousSession = !result.sessionName;
+
+    if (isEmpty && hasOldData && (sameSession || ambiguousSession)) {
+        console.log("Scrape returned empty results for same/ambiguous session - preserving previous data.");
+        // Update timestamp to show we are still alive
+        lastData.updatedAt = Date.now();
+        // Update announcements if available
+        if (result.announcements && result.announcements.length) {
+            lastData.announcements = result.announcements;
+        }
+        return lastData;
+    }
+
     lastData = { standings: result.rows, sessionName: result.sessionName || "", sessionLaps: result.sessionLaps || "", flagFinish: !!result.flagFinish, announcements: result.announcements || [], updatedAt: Date.now() };
     lastFetchTs = Date.now();
     return lastData;
@@ -643,7 +661,16 @@ async function ensureBrowser() {
       try { if (browser) await browser.close(); } catch (_) {}
       browser = null; page = null;
   }
-  return { standings: [], sessionName: "", sessionLaps: "", flagFinish: false, announcements: [], updatedAt: Date.now() };
+  // Return last known good data instead of clearing the screen on error
+  console.log("Returning last valid data due to scrape error.");
+  return { 
+      standings: lastData.standings || [], 
+      sessionName: lastData.sessionName || "", 
+      sessionLaps: lastData.sessionLaps || "", 
+      flagFinish: !!lastData.flagFinish, 
+      announcements: lastData.announcements || [], 
+      updatedAt: Date.now() 
+  };
 }
 }
 
