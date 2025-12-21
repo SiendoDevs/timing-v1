@@ -100,15 +100,29 @@ async function launchBrowser() {
   // Forward browser console logs to Node terminal
   p.on('console', msg => console.log('BROWSER LOG:', msg.text()));
 
-  // Optimize: Block unnecessary resources
+  // Optimize: Block unnecessary resources and 3rd party bloat
   await p.setRequestInterception(true);
   p.on('request', (req) => {
       const resourceType = req.resourceType();
-      if (['image', 'media'].includes(resourceType)) {
+      const url = req.url().toLowerCase();
+      
+      // Block media, fonts, and common bloat
+      if (['image', 'media', 'font', 'stylesheet'].includes(resourceType)) {
           req.abort();
-      } else {
-          req.continue();
+          return;
       }
+      
+      // Block specific heavy 3rd parties
+      if (url.includes('google-analytics') || 
+          url.includes('googletagmanager') || 
+          url.includes('facebook') || 
+          url.includes('maps.googleapis') ||
+          url.includes('doubleclick')) {
+          req.abort();
+          return;
+      }
+      
+      req.continue();
   });
   
   return { browser: b, page: p };
