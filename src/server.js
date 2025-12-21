@@ -610,7 +610,15 @@ async function scrapeStandings({ debug = false, overrideUrl = null } = {}) {
 
   // Close browser immediately after data extraction to free resources (Stateless approach)
   console.log("Scrape successful, closing browser instance.");
-  try { if (b) await b.close(); } catch (_) {}
+  
+  // Optimization: Don't await close() to return data to client faster. Let it close in background.
+  if (b) {
+      const browserToClose = b;
+      const tClose = Date.now();
+      browserToClose.close()
+        .then(() => console.log(`Browser instance closed completely in ${Date.now() - tClose}ms (background).`))
+        .catch(e => console.error("Error closing browser in background:", e));
+  }
   b = null; p = null;
 
   if (!overrideUrl) {
@@ -661,7 +669,9 @@ async function scrapeStandings({ debug = false, overrideUrl = null } = {}) {
   console.log("Scrape Error:", String(e));
   
   // Ensure browser is closed on error
-  try { if (b) await b.close(); } catch (_) {}
+  if (b) {
+      b.close().catch(() => {});
+  }
   b = null; p = null;
 
   // Return last known good data instead of clearing the screen on error
