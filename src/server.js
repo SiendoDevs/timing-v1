@@ -698,7 +698,7 @@ async function ensureBrowser() {
     } : null;
     return { rows, sessionName, sessionLaps, flagFinish, announcements, debug: dbg };
   }, debug === true),
-  new Promise((_, reject) => setTimeout(() => reject(new Error("Scrape evaluation timeout")), 60000))
+  new Promise((_, reject) => setTimeout(() => reject(new Error("Scrape evaluation timeout")), 30000))
   ]);
 
   // Increment scrape count on success
@@ -750,8 +750,9 @@ async function ensureBrowser() {
   }
 } catch (e) {
   console.log("Scrape Error:", String(e));
-  if (String(e).includes("Execution context was destroyed") || String(e).includes("Target closed")) {
-      // If context destroyed, force browser restart next time
+  if (String(e).includes("Execution context was destroyed") || String(e).includes("Target closed") || String(e).includes("Scrape evaluation timeout")) {
+      // If context destroyed or timeout, force browser restart next time
+      console.log("Critical scrape error detected, forcing browser restart...");
       try { if (browser) await browser.close(); } catch (_) {}
       browser = null; page = null;
   }

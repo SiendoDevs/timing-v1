@@ -10,7 +10,7 @@ export default function CurrentLap({ finishFlag, lapsLabel, lapsChangeAnim }) {
         backgroundSize: "22px 22px",
         backgroundPosition: "calc(50% - 11px) calc(50% - 11px)"
       } : {
-        background: "var(--panel)"
+        background: "#000000"
       }}
     >
       <div className={`absolute top-0 bottom-0 left-0 bg-green-500/30 shadow-[0_0_30px_rgba(34,197,94,0.6)] z-0 pointer-events-none ${lapsChangeAnim ? "animate-progress-temp" : ""}`} />

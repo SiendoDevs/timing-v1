@@ -24,7 +24,7 @@ export default function Announcements({ items }) {
         style={{
           opacity: a,
           scale: a.to([0, 1], [0.9, 1]),
-          background: "var(--panel)"
+          background: "#000000"
         }}
         className="rounded-xl overflow-hidden shadow-[0_8px_28px_rgba(0,0,0,0.35)] backdrop-blur-sm h-[45px] flex items-center px-5 font-bold tracking-tight whitespace-nowrap border border-white/10"
       >
