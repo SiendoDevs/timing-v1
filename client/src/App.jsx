@@ -101,7 +101,7 @@ export default function App() {
   const [fastestLapData, setFastestLapData] = useState(null);
 
   useEffect(() => {
-    const limit = limitParam && parseInt(limitParam) > 0 ? parseInt(limitParam) : 23;
+    const limit = limitParam && parseInt(limitParam) > 0 ? parseInt(limitParam) : 20;
     if (rows.length > limit) {
       const t = setInterval(() => {
         setPage(p => {
@@ -301,7 +301,7 @@ export default function App() {
   }, []);
 
   function topLimit(list, limitParam) {
-    const maxRows = limitParam && parseInt(limitParam) > 0 ? parseInt(limitParam) : 23;
+    const maxRows = limitParam && parseInt(limitParam) > 0 ? parseInt(limitParam) : 20;
     return list.slice(0, maxRows);
   }
   function computeLaps(list) {
@@ -537,7 +537,7 @@ export default function App() {
   const mountedOverlay = useMount(showOverlay, { from: 0, enter: 1, exit: 0 });
   const mountedLap = useMount((lapCardVisible || fastestLapVisible) && showOverlay, { from: 0, enter: 1, exit: 0 });
 
-  const limit = limitParam && parseInt(limitParam) > 0 ? parseInt(limitParam) : 23;
+  const limit = limitParam && parseInt(limitParam) > 0 ? parseInt(limitParam) : 20;
   const pageStart = page * limit;
   const visibleRows = rows.slice(pageStart, pageStart + limit);
 
@@ -579,7 +579,7 @@ export default function App() {
                   const nlen = sname.replace(/\s+/g, "").length;
                   const nameClass = nlen > 18 ? "text-[14px] italic font-extrabold uppercase" : nlen > 14 ? "text-[15px] italic font-extrabold uppercase" : "text-[17px] italic font-extrabold uppercase";
                   const tdBase = "px-2.5 py-1.5 text-[14px] leading-tight border-b border-white/10 whitespace-nowrap overflow-hidden text-ellipsis relative";
-                  const posBase = "px-2.5 py-1.5 text-[14px] leading-tight border-b border-white/10 text-right font-bold relative";
+                  const posBase = "pl-1 pr-2.5 py-1.5 text-[18px] leading-tight border-b border-white/10 text-right font-black italic relative";
                   const arrow = (lastPositions.current.size > 0 && prevVal != null)
                     ? curPos < prevVal
                       ? <span className="text-[12px] ml-1" style={{ color: "var(--up)" }}>▲</span>
@@ -602,7 +602,7 @@ export default function App() {
                   
                   return (
                     <tr key={id} className={trClass}>
-                      <td className={`${posBase} w-[78px]`}>
+                      <td className={`${posBase} w-[68px]`}>
                         {r.hasFinishFlag && <span className="flag-icon flag-left show-left">🏁</span>}
                         {!r.hasFinishFlag && isFastest && showFastest && <span className="flag-icon flag-left show-left"><Timer color="#ffffff" style={{ width: "1.2em", height: "1.2em" }} /></span>}
                         <span className="inline-block">{safe(r.position)}</span>{arrow}
