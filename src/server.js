@@ -45,7 +45,7 @@ const MEMORY_WARNING_THRESHOLD_MB = 400; // Restart if usage > 400MB
 let lastData = { standings: [], sessionName: "", flagFinish: false, updatedAt: 0 };
 let lastFetchTs = 0;
 let scrapePromise = null;
-const MIN_FETCH_INTERVAL = 10000; // Increased to 10 seconds to reduce load and prevent "stuck" loops
+const MIN_FETCH_INTERVAL = 30000; // Increased to 10 seconds to reduce load and prevent "stuck" loops
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function ensureBrowser() {
