@@ -18,6 +18,7 @@ function Input({ label, value, onChange, placeholder }) {
 export default function Dashboard() {
   const [url, setUrl] = useState("");
   const [overlayEnabled, setOverlayEnabled] = useState(true);
+  const [scrapingEnabled, setScrapingEnabled] = useState(true);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState("");
   const [lastUpdated, setLastUpdated] = useState(null);
@@ -32,6 +33,7 @@ export default function Dashboard() {
     const data = await res.json();
     setUrl(data.speedhiveUrl || "");
     setOverlayEnabled(data.overlayEnabled !== false);
+    setScrapingEnabled(data.scrapingEnabled !== false);
   }
   async function saveConfig() {
     setSaving(true);
@@ -107,6 +109,28 @@ export default function Dashboard() {
       setSaving(false);
     }
   }
+
+  async function toggleScraping() {
+    setSaving(true);
+    setStatus("");
+    try {
+      const apiOrigin = import.meta.env.VITE_API_URL || "";
+      const res = await fetch(`${apiOrigin}/api/config`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scrapingEnabled: !scrapingEnabled })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Error");
+      setScrapingEnabled(data.scrapingEnabled !== false);
+      setStatus(data.scrapingEnabled ? "Scraping activado" : "Scraping pausado");
+    } catch (e) {
+      setStatus(String(e.message || e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
   function abrirOverlay() {
     window.open("/", "_blank");
   }
@@ -203,11 +227,20 @@ export default function Dashboard() {
 
           <div className="rounded-xl border border-white/10 shadow-[0_8px_28px_rgba(0,0,0,0.35)] overflow-hidden" style={{ background: "var(--panel)" }}>
             <div className="px-4 py-3 font-bold border-b border-white/10 flex items-center gap-3" style={{ background: "var(--header-bg)" }}>
-              <div className="w-3 h-3 rounded-full" style={{ background: "var(--accent)" }} />
-              <div>Bloque vacío</div>
+              <div className="w-3 h-3 rounded-full" style={{ background: scrapingEnabled ? "#22c55e" : "#ef4444" }} />
+              <div>Estado del Servicio</div>
             </div>
             <div className="p-4">
-              <div className="text-sm opacity-70">-</div>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={toggleScraping}
+                  disabled={saving}
+                  className={`px-4 py-3 font-extrabold inline-flex items-center justify-center rounded-md text-sm transition-colors border border-white/10 ${scrapingEnabled ? "bg-red-500/20 text-red-200 hover:bg-red-500/30" : "bg-green-500/20 text-green-200 hover:bg-green-500/30"} disabled:opacity-60 disabled:pointer-events-none`}
+                >
+                  {scrapingEnabled ? "PAUSAR SCRAPING" : "REANUDAR SCRAPING"}
+                </button>
+                <span className="text-sm opacity-80">{scrapingEnabled ? "Servicio activo" : "Servicio pausado"}</span>
+              </div>
             </div>
           </div>
 

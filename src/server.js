@@ -6,6 +6,7 @@ import fs from "node:fs";
 
 let speedhiveUrl = process.env.SPEEDHIVE_URL || "";
 let overlayEnabled = true;
+let scrapingEnabled = true;
 const CONFIG_FILE = path.resolve("config.json");
 
 // Load config on startup
@@ -15,7 +16,8 @@ try {
     const conf = JSON.parse(raw);
     if (conf.speedhiveUrl) speedhiveUrl = conf.speedhiveUrl;
     if (typeof conf.overlayEnabled === 'boolean') overlayEnabled = conf.overlayEnabled;
-    console.log("Loaded config:", { speedhiveUrl, overlayEnabled });
+    if (typeof conf.scrapingEnabled === 'boolean') scrapingEnabled = conf.scrapingEnabled;
+    console.log("Loaded config:", { speedhiveUrl, overlayEnabled, scrapingEnabled });
   }
 } catch (e) {
   console.error("Error loading config:", e);
@@ -715,6 +717,12 @@ app.get("/api/standings", async (_req, res) => {
     const testUrl = typeof _req.query?.url === "string" ? _req.query.url : null;
     const force = _req.query?.force === "1";
 
+    // 0. Check if scraping is globally disabled (and not forced)
+    if (!scrapingEnabled && !force && !debug && !testUrl) {
+        res.json({ source: speedhiveUrl, updatedAt: lastData.updatedAt || Date.now(), sessionName: lastData.sessionName || "", sessionLaps: lastData.sessionLaps || "", flagFinish: !!lastData.flagFinish, standings: lastData.standings || [], announcements: lastData.announcements || [], status: "paused" });
+        return;
+    }
+
     // 1. Check cache for standard polling requests (no debug/force/testUrl)
     if (!testUrl && !force && !debug && Date.now() - lastFetchTs < MIN_FETCH_INTERVAL && lastData.standings.length) {
       res.json({ source: speedhiveUrl, updatedAt: lastData.updatedAt, sessionName: lastData.sessionName || "", sessionLaps: lastData.sessionLaps || "", flagFinish: !!lastData.flagFinish, standings: lastData.standings, announcements: lastData.announcements || [] });
@@ -747,12 +755,12 @@ app.get("/api/standings", async (_req, res) => {
 });
 
 app.get("/api/config", (_req, res) => {
-  res.json({ speedhiveUrl, overlayEnabled });
+  res.json({ speedhiveUrl, overlayEnabled, scrapingEnabled });
 });
 
 app.post("/api/config", async (req, res) => {
   try {
-    const { speedhiveUrl: nextUrl, overlayEnabled: nextOverlayEnabled, initialData } = req.body || {};
+    const { speedhiveUrl: nextUrl, overlayEnabled: nextOverlayEnabled, scrapingEnabled: nextScrapingEnabled, initialData } = req.body || {};
     if (typeof nextUrl === "string" && /^https?:\/\//i.test(nextUrl)) {
       if (nextUrl !== speedhiveUrl) {
         speedhiveUrl = nextUrl;
@@ -790,15 +798,18 @@ app.post("/api/config", async (req, res) => {
     if (typeof nextOverlayEnabled === "boolean") {
       overlayEnabled = nextOverlayEnabled;
     }
+    if (typeof nextScrapingEnabled === "boolean") {
+      scrapingEnabled = nextScrapingEnabled;
+    }
     
     // No persist config - memory only
     // try {
-    //   fs.writeFileSync(CONFIG_FILE, JSON.stringify({ speedhiveUrl, overlayEnabled }));
+    //   fs.writeFileSync(CONFIG_FILE, JSON.stringify({ speedhiveUrl, overlayEnabled, scrapingEnabled }));
     // } catch (e) {
     //   console.error("Error saving config:", e);
     // }
 
-    res.json({ ok: true, speedhiveUrl, overlayEnabled });
+    res.json({ ok: true, speedhiveUrl, overlayEnabled, scrapingEnabled });
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }
