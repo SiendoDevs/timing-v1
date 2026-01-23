@@ -208,14 +208,14 @@ async function scrapeStandings({ debug = false, overrideUrl = null } = {}) {
         const isHealthy = await Promise.race([
             page.evaluate(() => {
                 const t = document.body.innerText || "";
-                // If it contains "Loading", consider it technically "healthy" (responsive) but not ready.
-                // We just want to avoid "about:blank" or crash states.
-                return t.length >= 20 || t.includes("Loading");
+                // Relaxed check: Just ensure it's not totally empty. "Loading..." is fine.
+                return t.length > 5;
             }),
-            new Promise((_, r) => setTimeout(() => r(new Error("Health check timeout")), 15000)) // 15s timeout
+            new Promise((_, r) => setTimeout(() => r(new Error("Health check timeout")), 20000)) 
         ]);
         if (!isHealthy) {
-             console.log("Page appears empty/broken, attempting reload...");
+             const bodyLen = await page.evaluate(() => document.body.innerText.length);
+             console.log(`Page appears empty (len=${bodyLen}), attempting reload...`);
              await page.reload({ waitUntil: "domcontentloaded" });
         }
     } catch (e) {
@@ -224,23 +224,27 @@ async function scrapeStandings({ debug = false, overrideUrl = null } = {}) {
     
     // Check/Wait for data
     try {
+        // First, check if we are stuck on "Loading"
+        await page.waitForFunction(() => {
+            const bodyText = document.body.innerText || "";
+            return !bodyText.includes("Loading") && !bodyText.includes("Please wait");
+        }, { timeout: 15000 }).catch(() => console.log("Timeout waiting for 'Loading' to disappear (might be stuck or finished)"));
+
         const hasRows = await page.evaluate(() => {
             const rows = document.querySelectorAll('.datatable-body-row, tr, [role="row"], .role-row');
             return rows.length > 0;
         });
         
         if (!hasRows) {
-            // Solo esperar si NO hay filas inmediatamente
+            // Wait specifically for rows now
             try {
                 await page.waitForFunction(() => {
                     const rows = document.querySelectorAll('.datatable-body-row, tr, [role="row"], .role-row');
-                    if (rows.length > 0) return true;
-                    const bodyText = document.body.innerText || "";
-                    // Si no hay filas pero hay texto "Loading", esperamos. Si no dice loading y hay texto, asumimos que cargó (aunque esté vacía la tabla)
-                    return !bodyText.includes("Loading") && !bodyText.includes("Please wait");
-                }, { timeout: 10000 }); // Reduced timeout
+                    return rows.length > 0;
+                }, { timeout: 15000 }); 
             } catch (e) {
                 // Timeout is acceptable, maybe there really is no data
+                console.log("Wait for rows timed out (page might be empty)");
             }
         }
     } catch (e) {
