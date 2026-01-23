@@ -50,7 +50,21 @@ let scrapePromise = null;
 const MIN_FETCH_INTERVAL = 30000;
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function launchBrowser() {
+let browserInstance = null;
+let pageInstance = null;
+
+async function getBrowser() {
+  if (browserInstance) {
+    // Verificar si el navegador sigue conectado
+    if (browserInstance.isConnected()) {
+      return browserInstance;
+    }
+    // Si no está conectado, limpiamos y re-lanzamos
+    try { await browserInstance.close(); } catch(e) {}
+    browserInstance = null;
+    pageInstance = null;
+  }
+
   const launchOptions = {
     headless: "new",
     args: [
@@ -89,31 +103,56 @@ async function launchBrowser() {
     launchOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
   }
 
-  const b = await puppeteer.launch(launchOptions);
-  const p = await b.newPage();
+  console.log("Launching new browser instance...");
+  browserInstance = await puppeteer.launch(launchOptions);
   
-  // Prevent navigation timeout errors by disabling timeout on page operations
-  p.setDefaultNavigationTimeout(60000); 
-  p.setDefaultTimeout(60000);
+  // Configurar limpieza al salir
+  const cleanExit = async () => {
+      if (browserInstance) await browserInstance.close();
+      process.exit();
+  };
+  process.on('SIGINT', cleanExit);
+  process.on('SIGTERM', cleanExit);
 
-  await p.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36");
-  await p.setViewport({ width: 1280, height: 720 });
+  return browserInstance;
+}
+
+async function getPage(forceNew = false) {
+  const browser = await getBrowser();
   
-  // Forward browser console logs to Node terminal
-  p.on('console', msg => console.log('BROWSER LOG:', msg.text()));
+  if (pageInstance && !forceNew) {
+      // Verificar si la página sigue válida (no ha crasheado)
+      try {
+          if (!pageInstance.isClosed()) return pageInstance;
+      } catch (e) {}
+  }
 
-  // Optimize: Block unnecessary resources
-  await p.setRequestInterception(true);
-  p.on('request', (req) => {
+  try {
+      if (pageInstance) await pageInstance.close().catch(() => {});
+  } catch (e) {}
+
+  console.log("Creating new page context...");
+  pageInstance = await browser.newPage();
+  
+  // Optimizaciones de página
+  pageInstance.setDefaultNavigationTimeout(60000); 
+  pageInstance.setDefaultTimeout(30000);
+  
+  await pageInstance.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36");
+  await pageInstance.setViewport({ width: 1280, height: 720 });
+
+  // Bloqueo de recursos
+  await pageInstance.setRequestInterception(true);
+  pageInstance.on('request', (req) => {
       const resourceType = req.resourceType();
-      if (['image', 'media'].includes(resourceType)) {
+      if (['image', 'media', 'font', 'stylesheet'].includes(resourceType)) {
           req.abort();
       } else {
           req.continue();
       }
   });
-  
-  return { browser: b, page: p };
+
+  return pageInstance;
 }
 
 async function scrapeStandings({ debug = false, overrideUrl = null } = {}) {
@@ -122,29 +161,38 @@ async function scrapeStandings({ debug = false, overrideUrl = null } = {}) {
     return { standings: [], sessionName: "", sessionLaps: "", flagFinish: false, announcements: [], updatedAt: Date.now() };
   }
   
-  let b = null;
-  let p = null;
-
   try {
-    const instance = await launchBrowser();
-    b = instance.browser;
-    p = instance.page;
+    const page = await getPage();
+    const currentUrl = page.url();
     
-    console.log(`Navigating to ${targetUrl}`);
-    await p.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
+    // Navegación inteligente: Solo navegar si la URL es diferente
+    // O si estamos en "about:blank"
+    const isSameUrl = currentUrl === targetUrl || (currentUrl.replace(/\/$/, "") === targetUrl.replace(/\/$/, ""));
+    
+    if (!isSameUrl || currentUrl === "about:blank") {
+        console.log(`Navigating to ${targetUrl}`);
+        await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
+    } else {
+        // Si es la misma URL, tal vez queramos recargar si ha pasado mucho tiempo
+        // O confiar en que la SPA se actualiza sola. 
+        // Para asegurar datos frescos en Speedhive, a veces es mejor recargar si no detectamos cambios en el DOM.
+        // Por ahora intentaremos leer directamente, si falla o da vacío, podríamos forzar recarga.
+        // console.log("Already on target URL, reading DOM...");
+    }
     
     // Check for stuck state (basic check)
+    // Usamos 'page' en lugar de 'p'
     try {
         const isHealthy = await Promise.race([
-            p.evaluate(() => {
+            page.evaluate(() => {
                 const t = document.body.innerText || "";
                 return t.length >= 50;
             }),
-            new Promise((_, r) => setTimeout(() => r(new Error("Health check timeout")), 30000))
+            new Promise((_, r) => setTimeout(() => r(new Error("Health check timeout")), 5000)) // Reduced timeout
         ]);
         if (!isHealthy) {
-             console.log("Page appears empty, might retry next time.");
-             // We continue anyway to see if rows appear later
+             console.log("Page appears empty, attempting reload...");
+             await page.reload({ waitUntil: "domcontentloaded" });
         }
     } catch (e) {
          console.error("Health check failed:", e);
@@ -152,42 +200,33 @@ async function scrapeStandings({ debug = false, overrideUrl = null } = {}) {
     
     // Check/Wait for data
     try {
-        const hasRows = await p.evaluate(() => {
+        const hasRows = await page.evaluate(() => {
             const rows = document.querySelectorAll('.datatable-body-row, tr, [role="row"], .role-row');
             return rows.length > 0;
         });
         
-        if (hasRows) {
-            console.log("Data rows detected immediately.");
-        } else {
+        if (!hasRows) {
+            // Solo esperar si NO hay filas inmediatamente
             try {
-                console.log("Waiting for 'Loading' to disappear...");
-                await p.waitForFunction(() => {
-                    const t = document.body.innerText || "";
-                    return !t.includes("Loading") && !t.includes("Please wait");
-                }, { timeout: 20000 });
-            } catch (e) {}
-            
-            try {
-                console.log("Waiting for data rows...");
-                await p.waitForFunction(() => {
+                await page.waitForFunction(() => {
                     const rows = document.querySelectorAll('.datatable-body-row, tr, [role="row"], .role-row');
                     if (rows.length > 0) return true;
                     const bodyText = document.body.innerText || "";
-                    return bodyText.length > 200 && !bodyText.includes("Loading");
-                }, { timeout: 25000 });
+                    // Si no hay filas pero hay texto "Loading", esperamos. Si no dice loading y hay texto, asumimos que cargó (aunque esté vacía la tabla)
+                    return !bodyText.includes("Loading") && !bodyText.includes("Please wait");
+                }, { timeout: 10000 }); // Reduced timeout
             } catch (e) {
-                console.log("Wait for rows timed out.");
+                // Timeout is acceptable, maybe there really is no data
             }
         }
     } catch (e) {
         console.error("Error during wait:", e);
     }
     
-    await delay(100);
+    // await delay(100); // Removed delay
 
     const result = await Promise.race([
-        p.evaluate((wantDebug) => {
+        page.evaluate((wantDebug) => {
     function text(el) { return (el?.textContent || "").trim(); }
     function safeParseInt(v) { const n = parseInt(String(v).replace(/[^\d]/g, "")); return Number.isFinite(n) ? n : null; }
     
@@ -610,25 +649,15 @@ async function scrapeStandings({ debug = false, overrideUrl = null } = {}) {
   new Promise((_, reject) => setTimeout(() => reject(new Error("Scrape evaluation timeout")), 30000))
   ]);
 
-  // Close browser immediately after data extraction to free resources (Stateless approach)
-  console.log("Scrape successful, closing browser instance.");
+  // Optimization: Browser is now persistent (Singleton). We do NOT close it here.
   
-  // Optimization: Don't await close() to return data to client faster. Let it close in background.
-  if (b) {
-      const browserToClose = b;
-      const tClose = Date.now();
-      browserToClose.close()
-        .then(() => console.log(`Browser instance closed completely in ${Date.now() - tClose}ms (background).`))
-        .catch(e => console.error("Error closing browser in background:", e));
-  }
-  b = null; p = null;
-
   if (!overrideUrl) {
     const isEmpty = !result.rows || result.rows.length === 0;
     const hasOldData = lastData.standings && lastData.standings.length > 0;
 
     // Helper to determine if we are likely in the same session despite minor scrape glitches
     const cleanName = (n) => (n || "").toLowerCase().replace(/\s+/g, "").replace(/speedhive|mylaps|loading/gi, "").replace(/lap\d+/gi, "").replace(/vuelta\d+/gi, "").replace(/\d+\/\d+/g, "");
+    
     const s1 = cleanName(result.sessionName);
     const s2 = cleanName(lastData.sessionName);
     // If one of them is empty/generic (after clean), we assume continuity. 
@@ -670,11 +699,12 @@ async function scrapeStandings({ debug = false, overrideUrl = null } = {}) {
 } catch (e) {
   console.log("Scrape Error:", String(e));
   
-  // Ensure browser is closed on error
-  if (b) {
-      b.close().catch(() => {});
+  // Si hay error, marcamos la página como nula para forzar reinicio en la próxima
+  pageInstance = null;
+  // Opcional: reiniciar browser si es un error fatal de desconexión
+  if (String(e).includes("Session closed") || String(e).includes("Target closed")) {
+      browserInstance = null;
   }
-  b = null; p = null;
 
   // Return last known good data instead of clearing the screen on error
   console.log("Returning last valid data due to scrape error.");
