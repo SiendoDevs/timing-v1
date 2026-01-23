@@ -56,8 +56,12 @@ let pageInstance = null;
 async function getBrowser() {
   if (browserInstance) {
     // Verificar si el navegador sigue conectado
-    if (browserInstance.isConnected()) {
-      return browserInstance;
+    try {
+        if (browserInstance.isConnected()) {
+           return browserInstance;
+        }
+    } catch (e) {
+        console.log("Browser disconnected or crashed check failed:", e);
     }
     // Si no está conectado, limpiamos y re-lanzamos
     try { await browserInstance.close(); } catch(e) {}
@@ -104,18 +108,36 @@ async function getBrowser() {
   }
 
   console.log("Launching new browser instance...");
-  browserInstance = await puppeteer.launch(launchOptions);
+  try {
+      browserInstance = await puppeteer.launch(launchOptions);
+  } catch (e) {
+      console.error("Failed to launch browser:", e);
+      throw e;
+  }
   
-  // Configurar limpieza al salir
-  const cleanExit = async () => {
-      if (browserInstance) await browserInstance.close();
-      process.exit();
-  };
-  process.on('SIGINT', cleanExit);
-  process.on('SIGTERM', cleanExit);
-
   return browserInstance;
 }
+
+// Ensure clean exit on termination signals
+const cleanExit = async () => {
+  console.log("Termination signal received. Closing browser...");
+  if (browserInstance) {
+      try {
+        await browserInstance.close(); 
+        console.log("Browser closed.");
+      } catch(e) {
+        console.error("Error closing browser:", e);
+      }
+  }
+  process.exit(0);
+};
+
+// Remove existing listeners to avoid duplicates if this module is reloaded (unlikely in this setup but good practice)
+process.removeAllListeners('SIGINT');
+process.removeAllListeners('SIGTERM');
+
+process.on('SIGINT', cleanExit);
+process.on('SIGTERM', cleanExit);
 
 async function getPage(forceNew = false) {
   const browser = await getBrowser();
@@ -186,12 +208,14 @@ async function scrapeStandings({ debug = false, overrideUrl = null } = {}) {
         const isHealthy = await Promise.race([
             page.evaluate(() => {
                 const t = document.body.innerText || "";
-                return t.length >= 50;
+                // If it contains "Loading", consider it technically "healthy" (responsive) but not ready.
+                // We just want to avoid "about:blank" or crash states.
+                return t.length >= 20 || t.includes("Loading");
             }),
-            new Promise((_, r) => setTimeout(() => r(new Error("Health check timeout")), 5000)) // Reduced timeout
+            new Promise((_, r) => setTimeout(() => r(new Error("Health check timeout")), 15000)) // 15s timeout
         ]);
         if (!isHealthy) {
-             console.log("Page appears empty, attempting reload...");
+             console.log("Page appears empty/broken, attempting reload...");
              await page.reload({ waitUntil: "domcontentloaded" });
         }
     } catch (e) {
@@ -723,8 +747,10 @@ async function executeScrape({ debug = false, overrideUrl = null } = {}) {
   // Wait for previous scrape
   let waitCount = 0;
   while (scrapePromise) {
-     if (waitCount++ > 50) { // 5 seconds
-        throw new Error("Scrape queue timeout - previous scrape stuck");
+     if (waitCount++ > 200) { // 20 seconds (100ms * 200)
+        console.warn("Scrape queue timeout - previous scrape stuck, proceeding anyway");
+        scrapePromise = null; // Force reset
+        break;
      }
      try { await Promise.race([scrapePromise, delay(100)]); } catch (e) {}
   }
