@@ -19,6 +19,7 @@ export default function Dashboard() {
   const [url, setUrl] = useState("");
   const [overlayEnabled, setOverlayEnabled] = useState(true);
   const [scrapingEnabled, setScrapingEnabled] = useState(true);
+  const [commentsEnabled, setCommentsEnabled] = useState(true);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState("");
   const [lastUpdated, setLastUpdated] = useState(null);
@@ -66,6 +67,7 @@ export default function Dashboard() {
     setUrl(data.speedhiveUrl || "");
     setOverlayEnabled(data.overlayEnabled !== false);
     setScrapingEnabled(data.scrapingEnabled !== false);
+    setCommentsEnabled(data.commentsEnabled !== false);
   }
   async function saveConfig() {
     setSaving(true);
@@ -93,7 +95,7 @@ export default function Dashboard() {
       const res = await fetch(`${apiOrigin}/api/config`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ speedhiveUrl: url, overlayEnabled, initialData })
+        body: JSON.stringify({ speedhiveUrl: url, overlayEnabled, scrapingEnabled, commentsEnabled, initialData })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Error");
@@ -156,6 +158,27 @@ export default function Dashboard() {
       if (!res.ok) throw new Error(data.error || "Error");
       setScrapingEnabled(data.scrapingEnabled !== false);
       setStatus(data.scrapingEnabled ? "Scraping activado" : "Scraping pausado");
+    } catch (e) {
+      setStatus(String(e.message || e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function toggleComments() {
+    setSaving(true);
+    setStatus("");
+    try {
+      const apiOrigin = import.meta.env.VITE_API_URL || "";
+      const res = await fetch(`${apiOrigin}/api/config`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ commentsEnabled: !commentsEnabled })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Error");
+      setCommentsEnabled(data.commentsEnabled !== false);
+      setStatus(data.commentsEnabled ? "Comentarios activados" : "Comentarios ocultos");
     } catch (e) {
       setStatus(String(e.message || e));
     } finally {
@@ -242,18 +265,28 @@ export default function Dashboard() {
           <div className="rounded-xl border border-white/10 shadow-[0_8px_28px_rgba(0,0,0,0.35)] overflow-hidden" style={{ background: "var(--panel)" }}>
             <div className="px-4 py-3 font-bold border-b border-white/10 flex items-center gap-3" style={{ background: "var(--header-bg)" }}>
               <div className="w-3 h-3 rounded-full" style={{ background: "var(--accent)" }} />
-              <div>Control del overlay</div>
+              <div>Control de visualización</div>
             </div>
-            <div className="p-4">
+            <div className="p-4 flex flex-col gap-4">
               <div className="flex items-center gap-3">
                 <button
                   onClick={toggleOverlay}
                   disabled={saving}
                   className={`px-4 py-3 font-extrabold inline-flex items-center justify-center rounded-md text-sm transition-colors border border-white/10 ${overlayEnabled ? "bg-white/10 hover:bg-white/15" : "bg-[var(--accent)] text-black"} disabled:opacity-60 disabled:pointer-events-none`}
                 >
-                  {overlayEnabled ? "Ocultar tabla de tiempos" : "Activar tabla de tiempos"}
+                  {overlayEnabled ? "Ocultar tabla" : "Mostrar tabla"}
                 </button>
-                <span className="text-sm opacity-80">Estado actual: {overlayEnabled ? "Visible" : "Oculto"}</span>
+                <span className="text-sm opacity-80">{overlayEnabled ? "Tabla visible" : "Tabla oculta"}</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={toggleComments}
+                  disabled={saving}
+                  className={`px-4 py-3 font-extrabold inline-flex items-center justify-center rounded-md text-sm transition-colors border border-white/10 ${commentsEnabled ? "bg-white/10 hover:bg-white/15" : "bg-[var(--accent)] text-black"} disabled:opacity-60 disabled:pointer-events-none`}
+                >
+                  {commentsEnabled ? "Ocultar comentarios" : "Mostrar comentarios"}
+                </button>
+                <span className="text-sm opacity-80">{commentsEnabled ? "Comentarios visibles" : "Comentarios ocultos"}</span>
               </div>
             </div>
           </div>

@@ -75,6 +75,7 @@ export default function App() {
   const [modeIdx, setModeIdx] = useState(0);
 
   const [showOverlay, setShowOverlay] = useState(true);
+  const [showComments, setShowComments] = useState(true);
   const SNAP_KEY = "overlay:lastSnapshot";
 
   const lastPositions = useRef(new Map());
@@ -258,6 +259,7 @@ export default function App() {
         const data = await res.json();
         if (!alive) return;
         setShowOverlay(data.overlayEnabled !== false);
+        setShowComments(data.commentsEnabled !== false);
       } catch {}
     }
     loadConfig();
@@ -631,7 +633,7 @@ export default function App() {
               <CurrentLap finishFlag={finishFlag} lapsLabel={lapsLabel} lapsChangeAnim={lapsChangeAnim} />
             )}
             <Overtakes badge={bestOver?.badge} who={bestOver?.who} gain={bestOver?.gain || 0} />
-            <Announcements items={annItems} />
+            {showComments && <Announcements items={annItems} />}
           </div>
         </div>
         </animate.div>

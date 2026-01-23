@@ -7,6 +7,7 @@ import fs from "node:fs";
 let speedhiveUrl = process.env.SPEEDHIVE_URL || "";
 let overlayEnabled = true;
 let scrapingEnabled = true;
+let commentsEnabled = true;
 const CONFIG_FILE = path.resolve("config.json");
 
 // Load config on startup
@@ -17,7 +18,8 @@ try {
     if (conf.speedhiveUrl) speedhiveUrl = conf.speedhiveUrl;
     if (typeof conf.overlayEnabled === 'boolean') overlayEnabled = conf.overlayEnabled;
     if (typeof conf.scrapingEnabled === 'boolean') scrapingEnabled = conf.scrapingEnabled;
-    console.log("Loaded config:", { speedhiveUrl, overlayEnabled, scrapingEnabled });
+    if (typeof conf.commentsEnabled === 'boolean') commentsEnabled = conf.commentsEnabled;
+    console.log("Loaded config:", { speedhiveUrl, overlayEnabled, scrapingEnabled, commentsEnabled });
   }
 } catch (e) {
   console.error("Error loading config:", e);
@@ -562,12 +564,12 @@ app.get("/api/standings", async (req, res) => {
 });
 
 app.get("/api/config", (_req, res) => {
-  res.json({ speedhiveUrl, overlayEnabled, scrapingEnabled });
+  res.json({ speedhiveUrl, overlayEnabled, scrapingEnabled, commentsEnabled });
 });
 
 app.post("/api/config", async (req, res) => {
   try {
-    const { speedhiveUrl: nextUrl, overlayEnabled: nextOverlayEnabled, scrapingEnabled: nextScrapingEnabled, initialData } = req.body || {};
+    const { speedhiveUrl: nextUrl, overlayEnabled: nextOverlayEnabled, scrapingEnabled: nextScrapingEnabled, commentsEnabled: nextCommentsEnabled, initialData } = req.body || {};
     
     if (typeof nextUrl === "string" && /^https?:\/\//i.test(nextUrl)) {
       if (nextUrl !== speedhiveUrl) {
@@ -590,8 +592,9 @@ app.post("/api/config", async (req, res) => {
     }
     if (typeof nextOverlayEnabled === "boolean") overlayEnabled = nextOverlayEnabled;
     if (typeof nextScrapingEnabled === "boolean") scrapingEnabled = nextScrapingEnabled;
+    if (typeof nextCommentsEnabled === "boolean") commentsEnabled = nextCommentsEnabled;
     
-    res.json({ ok: true, speedhiveUrl, overlayEnabled, scrapingEnabled });
+    res.json({ ok: true, speedhiveUrl, overlayEnabled, scrapingEnabled, commentsEnabled });
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }
