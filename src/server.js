@@ -50,25 +50,7 @@ let scrapePromise = null;
 const MIN_FETCH_INTERVAL = 30000;
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-let browserInstance = null;
-let pageInstance = null;
-
-async function getBrowser() {
-  if (browserInstance) {
-    // Verificar si el navegador sigue conectado
-    try {
-        if (browserInstance.isConnected()) {
-           return browserInstance;
-        }
-    } catch (e) {
-        console.log("Browser disconnected or crashed check failed:", e);
-    }
-    // Si no está conectado, limpiamos y re-lanzamos
-    try { await browserInstance.close(); } catch(e) {}
-    browserInstance = null;
-    pageInstance = null;
-  }
-
+async function launchBrowser() {
   const launchOptions = {
     headless: "new",
     args: [
@@ -107,74 +89,31 @@ async function getBrowser() {
     launchOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
   }
 
-  console.log("Launching new browser instance...");
-  try {
-      browserInstance = await puppeteer.launch(launchOptions);
-  } catch (e) {
-      console.error("Failed to launch browser:", e);
-      throw e;
-  }
+  const b = await puppeteer.launch(launchOptions);
+  const p = await b.newPage();
   
-  return browserInstance;
-}
+  // Prevent navigation timeout errors by disabling timeout on page operations
+  p.setDefaultNavigationTimeout(60000); 
+  p.setDefaultTimeout(60000);
 
-// Ensure clean exit on termination signals
-const cleanExit = async () => {
-  console.log("Termination signal received. Closing browser...");
-  if (browserInstance) {
-      try {
-        await browserInstance.close(); 
-        console.log("Browser closed.");
-      } catch(e) {
-        console.error("Error closing browser:", e);
-      }
-  }
-  process.exit(0);
-};
-
-// Remove existing listeners to avoid duplicates if this module is reloaded (unlikely in this setup but good practice)
-process.removeAllListeners('SIGINT');
-process.removeAllListeners('SIGTERM');
-
-process.on('SIGINT', cleanExit);
-process.on('SIGTERM', cleanExit);
-
-async function getPage(forceNew = false) {
-  const browser = await getBrowser();
+  await p.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36");
+  await p.setViewport({ width: 1280, height: 720 });
   
-  if (pageInstance && !forceNew) {
-      // Verificar si la página sigue válida (no ha crasheado)
-      try {
-          if (!pageInstance.isClosed()) return pageInstance;
-      } catch (e) {}
-  }
+  // Forward browser console logs to Node terminal
+  p.on('console', msg => console.log('BROWSER LOG:', msg.text()));
 
-  try {
-      if (pageInstance) await pageInstance.close().catch(() => {});
-  } catch (e) {}
-
-  console.log("Creating new page context...");
-  pageInstance = await browser.newPage();
-  
-  // Optimizaciones de página
-  pageInstance.setDefaultNavigationTimeout(60000); 
-  pageInstance.setDefaultTimeout(30000);
-  
-  await pageInstance.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36");
-  await pageInstance.setViewport({ width: 1280, height: 720 });
-
-  // Bloqueo de recursos
-  await pageInstance.setRequestInterception(true);
-  pageInstance.on('request', (req) => {
+  // Optimize: Block unnecessary resources
+  await p.setRequestInterception(true);
+  p.on('request', (req) => {
       const resourceType = req.resourceType();
-      if (['image', 'media', 'font', 'stylesheet'].includes(resourceType)) {
+      if (['image', 'media'].includes(resourceType)) {
           req.abort();
       } else {
           req.continue();
       }
   });
-
-  return pageInstance;
+  
+  return { browser: b, page: p };
 }
 
 async function scrapeStandings({ debug = false, overrideUrl = null } = {}) {
@@ -183,40 +122,29 @@ async function scrapeStandings({ debug = false, overrideUrl = null } = {}) {
     return { standings: [], sessionName: "", sessionLaps: "", flagFinish: false, announcements: [], updatedAt: Date.now() };
   }
   
+  let b = null;
+  let p = null;
+
   try {
-    const page = await getPage();
-    const currentUrl = page.url();
+    const instance = await launchBrowser();
+    b = instance.browser;
+    p = instance.page;
     
-    // Navegación inteligente: Solo navegar si la URL es diferente
-    // O si estamos en "about:blank"
-    const isSameUrl = currentUrl === targetUrl || (currentUrl.replace(/\/$/, "") === targetUrl.replace(/\/$/, ""));
-    
-    if (!isSameUrl || currentUrl === "about:blank") {
-        console.log(`Navigating to ${targetUrl}`);
-        await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
-    } else {
-        // Si es la misma URL, tal vez queramos recargar si ha pasado mucho tiempo
-        // O confiar en que la SPA se actualiza sola. 
-        // Para asegurar datos frescos en Speedhive, a veces es mejor recargar si no detectamos cambios en el DOM.
-        // Por ahora intentaremos leer directamente, si falla o da vacío, podríamos forzar recarga.
-        // console.log("Already on target URL, reading DOM...");
-    }
+    console.log(`Navigating to ${targetUrl}`);
+    await p.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
     
     // Check for stuck state (basic check)
-    // Usamos 'page' en lugar de 'p'
     try {
         const isHealthy = await Promise.race([
-            page.evaluate(() => {
+            p.evaluate(() => {
                 const t = document.body.innerText || "";
-                // Relaxed check: Just ensure it's not totally empty. "Loading..." is fine.
-                return t.length > 5;
+                return t.length >= 50;
             }),
-            new Promise((_, r) => setTimeout(() => r(new Error("Health check timeout")), 20000)) 
+            new Promise((_, r) => setTimeout(() => r(new Error("Health check timeout")), 30000))
         ]);
         if (!isHealthy) {
-             const bodyLen = await page.evaluate(() => document.body.innerText.length);
-             console.log(`Page appears empty (len=${bodyLen}), attempting reload...`);
-             await page.reload({ waitUntil: "domcontentloaded" });
+             console.log("Page appears empty, might retry next time.");
+             // We continue anyway to see if rows appear later
         }
     } catch (e) {
          console.error("Health check failed:", e);
@@ -224,37 +152,42 @@ async function scrapeStandings({ debug = false, overrideUrl = null } = {}) {
     
     // Check/Wait for data
     try {
-        // First, check if we are stuck on "Loading"
-        await page.waitForFunction(() => {
-            const bodyText = document.body.innerText || "";
-            return !bodyText.includes("Loading") && !bodyText.includes("Please wait");
-        }, { timeout: 15000 }).catch(() => console.log("Timeout waiting for 'Loading' to disappear (might be stuck or finished)"));
-
-        const hasRows = await page.evaluate(() => {
+        const hasRows = await p.evaluate(() => {
             const rows = document.querySelectorAll('.datatable-body-row, tr, [role="row"], .role-row');
             return rows.length > 0;
         });
         
-        if (!hasRows) {
-            // Wait specifically for rows now
+        if (hasRows) {
+            console.log("Data rows detected immediately.");
+        } else {
             try {
-                await page.waitForFunction(() => {
+                console.log("Waiting for 'Loading' to disappear...");
+                await p.waitForFunction(() => {
+                    const t = document.body.innerText || "";
+                    return !t.includes("Loading") && !t.includes("Please wait");
+                }, { timeout: 20000 });
+            } catch (e) {}
+            
+            try {
+                console.log("Waiting for data rows...");
+                await p.waitForFunction(() => {
                     const rows = document.querySelectorAll('.datatable-body-row, tr, [role="row"], .role-row');
-                    return rows.length > 0;
-                }, { timeout: 15000 }); 
+                    if (rows.length > 0) return true;
+                    const bodyText = document.body.innerText || "";
+                    return bodyText.length > 200 && !bodyText.includes("Loading");
+                }, { timeout: 25000 });
             } catch (e) {
-                // Timeout is acceptable, maybe there really is no data
-                console.log("Wait for rows timed out (page might be empty)");
+                console.log("Wait for rows timed out.");
             }
         }
     } catch (e) {
         console.error("Error during wait:", e);
     }
     
-    // await delay(100); // Removed delay
+    await delay(100);
 
     const result = await Promise.race([
-        page.evaluate((wantDebug) => {
+        p.evaluate((wantDebug) => {
     function text(el) { return (el?.textContent || "").trim(); }
     function safeParseInt(v) { const n = parseInt(String(v).replace(/[^\d]/g, "")); return Number.isFinite(n) ? n : null; }
     
@@ -677,20 +610,18 @@ async function scrapeStandings({ debug = false, overrideUrl = null } = {}) {
   new Promise((_, reject) => setTimeout(() => reject(new Error("Scrape evaluation timeout")), 30000))
   ]);
 
-  // Optimization: Browser is now persistent (Singleton). We do NOT close it here.
-  // HOWEVER: To avoid memory leaks in limited environments (like Render Free Tier), we might need to close it periodically.
-  // For now, let's keep it open but if we detect high usage or errors, we reset.
-  // UPDATE: User reported SIGTERM (OOM). We MUST close the browser to free memory until we have a better solution.
-  // Reverting to stateless mode for stability.
+  // Close browser immediately after data extraction to free resources (Stateless approach)
+  console.log("Scrape successful, closing browser instance.");
   
-  try {
-     if (browserInstance) {
-        console.log("Closing browser to free memory (Stateless Mode)...");
-        await browserInstance.close();
-        browserInstance = null;
-        pageInstance = null;
-     }
-  } catch(e) { console.error("Error closing browser:", e); }
+  // Optimization: Don't await close() to return data to client faster. Let it close in background.
+  if (b) {
+      const browserToClose = b;
+      const tClose = Date.now();
+      browserToClose.close()
+        .then(() => console.log(`Browser instance closed completely in ${Date.now() - tClose}ms (background).`))
+        .catch(e => console.error("Error closing browser in background:", e));
+  }
+  b = null; p = null;
 
   if (!overrideUrl) {
     const isEmpty = !result.rows || result.rows.length === 0;
@@ -698,7 +629,6 @@ async function scrapeStandings({ debug = false, overrideUrl = null } = {}) {
 
     // Helper to determine if we are likely in the same session despite minor scrape glitches
     const cleanName = (n) => (n || "").toLowerCase().replace(/\s+/g, "").replace(/speedhive|mylaps|loading/gi, "").replace(/lap\d+/gi, "").replace(/vuelta\d+/gi, "").replace(/\d+\/\d+/g, "");
-    
     const s1 = cleanName(result.sessionName);
     const s2 = cleanName(lastData.sessionName);
     // If one of them is empty/generic (after clean), we assume continuity. 
@@ -740,12 +670,11 @@ async function scrapeStandings({ debug = false, overrideUrl = null } = {}) {
 } catch (e) {
   console.log("Scrape Error:", String(e));
   
-  // Si hay error, marcamos la página como nula para forzar reinicio en la próxima
-  pageInstance = null;
-  // Opcional: reiniciar browser si es un error fatal de desconexión
-  if (String(e).includes("Session closed") || String(e).includes("Target closed")) {
-      browserInstance = null;
+  // Ensure browser is closed on error
+  if (b) {
+      b.close().catch(() => {});
   }
+  b = null; p = null;
 
   // Return last known good data instead of clearing the screen on error
   console.log("Returning last valid data due to scrape error.");
@@ -764,10 +693,8 @@ async function executeScrape({ debug = false, overrideUrl = null } = {}) {
   // Wait for previous scrape
   let waitCount = 0;
   while (scrapePromise) {
-     if (waitCount++ > 200) { // 20 seconds (100ms * 200)
-        console.warn("Scrape queue timeout - previous scrape stuck, proceeding anyway");
-        scrapePromise = null; // Force reset
-        break;
+     if (waitCount++ > 50) { // 5 seconds
+        throw new Error("Scrape queue timeout - previous scrape stuck");
      }
      try { await Promise.race([scrapePromise, delay(100)]); } catch (e) {}
   }
