@@ -464,13 +464,19 @@ const SCRAPE_FUNCTION = (wantDebug) => {
 
 // --- BACKGROUND LOOP ---
 
+let isTickRunning = false;
+
 async function tick() {
-  if (!scrapingEnabled || !speedhiveUrl) {
+  if (isTickRunning || !scrapingEnabled || !speedhiveUrl) {
     return;
   }
+  isTickRunning = true;
 
   const p = await ensurePage(speedhiveUrl);
-  if (!p) return; // Browser initializing or error
+  if (!p) {
+      isTickRunning = false;
+      return; 
+  }
 
   try {
     const result = await p.evaluate(SCRAPE_FUNCTION, false);
@@ -514,6 +520,8 @@ async function tick() {
         globalBrowser = null;
         lastUrl = "";
     }
+  } finally {
+    isTickRunning = false;
   }
 }
 
