@@ -674,7 +674,20 @@ async function scrapeStandings({ debug = false, overrideUrl = null } = {}) {
   ]);
 
   // Optimization: Browser is now persistent (Singleton). We do NOT close it here.
+  // HOWEVER: To avoid memory leaks in limited environments (like Render Free Tier), we might need to close it periodically.
+  // For now, let's keep it open but if we detect high usage or errors, we reset.
+  // UPDATE: User reported SIGTERM (OOM). We MUST close the browser to free memory until we have a better solution.
+  // Reverting to stateless mode for stability.
   
+  try {
+     if (browserInstance) {
+        console.log("Closing browser to free memory (Stateless Mode)...");
+        await browserInstance.close();
+        browserInstance = null;
+        pageInstance = null;
+     }
+  } catch(e) { console.error("Error closing browser:", e); }
+
   if (!overrideUrl) {
     const isEmpty = !result.rows || result.rows.length === 0;
     const hasOldData = lastData.standings && lastData.standings.length > 0;
