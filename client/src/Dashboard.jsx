@@ -26,6 +26,49 @@ export default function Dashboard() {
   const [debug, setDebug] = useState(null);
   const [previewRows, setPreviewRows] = useState([]);
   const [fullData, setFullData] = useState(null);
+  const [secondsSinceUpdate, setSecondsSinceUpdate] = useState(0);
+
+  // Polling to keep dashboard updated with server state
+  useEffect(() => {
+    const fetchStatus = async () => {
+      try {
+        const apiOrigin = import.meta.env.VITE_API_URL || "";
+        const res = await fetch(`${apiOrigin}/api/standings`);
+        const data = await res.json();
+        if (data.updatedAt) {
+          setLastUpdated(data.updatedAt);
+          setSessionName(data.sessionName || "");
+          if (Array.isArray(data.standings)) {
+              setPreviewRows(data.standings.slice(0, 12));
+          }
+        }
+      } catch (e) {
+        // Silent error
+      }
+    };
+
+    fetchStatus();
+    const interval = setInterval(fetchStatus, 3000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Timer to show elapsed time since last update
+  useEffect(() => {
+    if (!lastUpdated) {
+        setSecondsSinceUpdate(0);
+        return;
+    }
+    
+    // Update immediately
+    const update = () => {
+        const diff = Math.floor((Date.now() - lastUpdated) / 1000);
+        setSecondsSinceUpdate(diff >= 0 ? diff : 0);
+    };
+    update();
+
+    const timer = setInterval(update, 1000);
+    return () => clearInterval(timer);
+  }, [lastUpdated]);
 
   async function loadConfig() {
     const apiOrigin = import.meta.env.VITE_API_URL || "";
@@ -155,7 +198,12 @@ export default function Dashboard() {
           <div className="ml-auto flex items-center gap-2">
             <span className={`px-2.5 py-1 rounded-md text-sm font-bold bg-white/10 border border-white/10 ${overlayEnabled ? "" : "bg-[var(--accent)] text-black"}`}>{overlayEnabled ? "Overlay visible" : "Overlay oculto"}</span>
             {sessionName && <span className="px-2.5 py-1 rounded-md text-sm font-bold bg-white/10 border border-white/10">{sessionName}</span>}
-            {lastUpdated && <span className="px-2.5 py-1 rounded-md text-sm font-bold bg-white/10 border border-white/10">{new Date(lastUpdated).toLocaleTimeString()}</span>}
+            {lastUpdated && (
+                <div className={`px-2.5 py-1 rounded-md text-sm font-bold border border-white/10 flex items-center gap-2 ${secondsSinceUpdate > 10 ? "bg-red-500/20 text-red-200 border-red-500/30" : "bg-emerald-500/20 text-emerald-200 border-emerald-500/30"}`}>
+                    <span>Hace {secondsSinceUpdate}s</span>
+                    <span className="opacity-60 text-xs border-l border-white/20 pl-2 ml-1">{new Date(lastUpdated).toLocaleTimeString()}</span>
+                </div>
+            )}
           </div>
         </div>
       </div>
