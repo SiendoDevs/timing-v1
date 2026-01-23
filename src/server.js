@@ -27,9 +27,7 @@ const PORT = process.env.PORT || 3000;
 
 const app = express();
 app.use(express.json());
-// Habilitar CORS para cualquier origen (para desarrollo y Vercel)
 app.use(cors());
-// Deshabilitar caché para endpoints de API
 app.use("/api", (req, res, next) => {
   res.header("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
   res.header("Pragma", "no-cache");
@@ -38,17 +36,14 @@ app.use("/api", (req, res, next) => {
 });
 app.use(express.static("dist"));
 
-let browser = null;
-let page = null;
-// let scrapeCount = 0; // Removed stateless approach
-// const MAX_SCRAPES_BEFORE_RESTART = 5; // Removed
-// const MEMORY_WARNING_THRESHOLD_MB = 400; // Removed
+// --- STATE MANAGEMENT ---
+let lastData = { standings: [], sessionName: "", sessionLaps: "", flagFinish: false, announcements: [], updatedAt: 0 };
+let globalBrowser = null;
+let globalPage = null;
+let isBrowserInitializing = false;
+let lastUrl = "";
 
-let lastData = { standings: [], sessionName: "", flagFinish: false, updatedAt: 0 };
-let lastFetchTs = 0;
-let scrapePromise = null;
-const MIN_FETCH_INTERVAL = 30000;
-const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+// --- BROWSER MANAGEMENT ---
 
 async function launchBrowser() {
   const launchOptions = {
@@ -92,21 +87,19 @@ async function launchBrowser() {
   const b = await puppeteer.launch(launchOptions);
   const p = await b.newPage();
   
-  // Prevent navigation timeout errors by disabling timeout on page operations
   p.setDefaultNavigationTimeout(60000); 
   p.setDefaultTimeout(60000);
 
   await p.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36");
   await p.setViewport({ width: 1280, height: 720 });
   
-  // Forward browser console logs to Node terminal
-  p.on('console', msg => console.log('BROWSER LOG:', msg.text()));
+  // Forward browser console logs (optional, kept for debug)
+  // p.on('console', msg => console.log('BROWSER LOG:', msg.text()));
 
-  // Optimize: Block unnecessary resources
   await p.setRequestInterception(true);
   p.on('request', (req) => {
       const resourceType = req.resourceType();
-      if (['image', 'media'].includes(resourceType)) {
+      if (['image', 'media', 'font'].includes(resourceType)) {
           req.abort();
       } else {
           req.continue();
@@ -116,89 +109,69 @@ async function launchBrowser() {
   return { browser: b, page: p };
 }
 
-async function scrapeStandings({ debug = false, overrideUrl = null } = {}) {
-  const targetUrl = overrideUrl || speedhiveUrl;
-  if (!targetUrl) {
-    return { standings: [], sessionName: "", sessionLaps: "", flagFinish: false, announcements: [], updatedAt: Date.now() };
-  }
-  
-  let b = null;
-  let p = null;
+async function ensurePage(targetUrl) {
+  if (isBrowserInitializing) return null;
 
   try {
-    const instance = await launchBrowser();
-    b = instance.browser;
-    p = instance.page;
-    
-    console.log(`Navigating to ${targetUrl}`);
-    await p.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
-    
-    // Check for stuck state (basic check)
-    try {
-        const isHealthy = await Promise.race([
-            p.evaluate(() => {
-                const t = document.body.innerText || "";
-                return t.length >= 50;
-            }),
-            new Promise((_, r) => setTimeout(() => r(new Error("Health check timeout")), 30000))
-        ]);
-        if (!isHealthy) {
-             console.log("Page appears empty, might retry next time.");
-             // We continue anyway to see if rows appear later
-        }
-    } catch (e) {
-         console.error("Health check failed:", e);
+    // 1. Check if browser exists and is connected
+    if (!globalBrowser || !globalBrowser.isConnected()) {
+      console.log("Initializing Browser...");
+      isBrowserInitializing = true;
+      if (globalBrowser) try { await globalBrowser.close(); } catch {}
+      globalBrowser = null;
+      globalPage = null;
+      
+      const instance = await launchBrowser();
+      globalBrowser = instance.browser;
+      globalPage = instance.page;
+      isBrowserInitializing = false;
+      lastUrl = ""; // Reset URL tracking
     }
-    
-    // Check/Wait for data
-    try {
-        const hasRows = await p.evaluate(() => {
-            const rows = document.querySelectorAll('.datatable-body-row, tr, [role="row"], .role-row');
-            return rows.length > 0;
-        });
-        
-        if (hasRows) {
-            console.log("Data rows detected immediately.");
-        } else {
-            try {
-                console.log("Waiting for 'Loading' to disappear...");
-                await p.waitForFunction(() => {
-                    const t = document.body.innerText || "";
-                    return !t.includes("Loading") && !t.includes("Please wait");
-                }, { timeout: 20000 });
-            } catch (e) {}
-            
-            try {
-                console.log("Waiting for data rows...");
-                await p.waitForFunction(() => {
-                    const rows = document.querySelectorAll('.datatable-body-row, tr, [role="row"], .role-row');
-                    if (rows.length > 0) return true;
-                    const bodyText = document.body.innerText || "";
-                    return bodyText.length > 200 && !bodyText.includes("Loading");
-                }, { timeout: 25000 });
-            } catch (e) {
-                console.log("Wait for rows timed out.");
-            }
-        }
-    } catch (e) {
-        console.error("Error during wait:", e);
-    }
-    
-    await delay(100);
 
-    const result = await Promise.race([
-        p.evaluate((wantDebug) => {
+    // 2. Check if page exists (should always be true if browser is ok)
+    if (!globalPage || globalPage.isClosed()) {
+       console.log("Page closed, recreating...");
+       globalPage = await globalBrowser.newPage();
+       lastUrl = "";
+    }
+
+    // 3. Navigate if URL changed or first run
+    if (lastUrl !== targetUrl) {
+      console.log(`Navigating to ${targetUrl}`);
+      // Use goto for the first time
+      await globalPage.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
+      lastUrl = targetUrl;
+      
+      // Initial wait for rows to stabilize
+      try {
+          await globalPage.waitForFunction(() => {
+             const t = document.body.innerText || "";
+             return (!t.includes("Loading") && t.length > 50) || document.querySelectorAll('.datatable-body-row, tr').length > 0;
+          }, { timeout: 15000 });
+      } catch (e) {
+          console.log("Initial load wait timed out, proceeding anyway.");
+      }
+    }
+
+    return globalPage;
+  } catch (e) {
+    console.error("Error in ensurePage:", e);
+    isBrowserInitializing = false;
+    // Force restart next time
+    try { if (globalBrowser) await globalBrowser.close(); } catch {}
+    globalBrowser = null;
+    globalPage = null;
+    lastUrl = "";
+    return null;
+  }
+}
+
+// --- SCRAPING LOGIC ---
+
+const SCRAPE_FUNCTION = (wantDebug) => {
     function text(el) { return (el?.textContent || "").trim(); }
     function safeParseInt(v) { const n = parseInt(String(v).replace(/[^\d]/g, "")); return Number.isFinite(n) ? n : null; }
     
-    // Custom getAttribute function to ensure we get live style values
-    function getStyle(el, prop) {
-        return el?.style?.[prop] || "";
-    }
-    
-    // Polyfill for matches if needed, though modern browsers have it.
-    // We will use standard DOM methods.
-
     function extractSessionName() {
       const h1 = document.querySelector('h1.session-name') || document.querySelector('[class*="session-name"]');
       const t = text(h1);
@@ -214,56 +187,39 @@ async function scrapeStandings({ debug = false, overrideUrl = null } = {}) {
       return document.title || '';
     }
     function extractSessionLaps() {
-      // 1. Try specific .header/.value structure (common in Speedhive)
       const headers = Array.from(document.querySelectorAll('.header, .label'));
       for (const h of headers) {
         if (text(h).toLowerCase() === 'laps' || text(h).toLowerCase() === 'vueltas') {
           let val = h.nextElementSibling;
-          // Accept any next sibling, not just .value, but prefer .value if exists
           if (val) {
              if (val.classList.contains('value')) return text(val);
-             // If not .value, check if it looks like a number
              const t = text(val);
              if (/^[\d/]+$/.test(t)) return t;
           }
-          
           const parent = h.parentElement;
           if (parent) {
              val = parent.querySelector('.value');
              if (val) return text(val);
-             // Fallback: look for any element with digits
              const digitEl = Array.from(parent.children).find(c => c !== h && /^[\d/]+$/.test(text(c)));
              if (digitEl) return text(digitEl);
           }
         }
       }
-
-      // 2. Generic text search in small containers
-      // Look for "Laps: 12" or "12 Laps"
       const candidates = Array.from(document.querySelectorAll('div, span, p, li'));
       for (const el of candidates) {
-         // Optimization: skip complex elements
          if (el.children.length > 2) continue;
          const t = text(el);
-         if (!t) continue;
-         
-         // Match "Laps 10", "Laps: 10", "10 Laps", "10/20 Laps"
-         // Avoid matching long sentences
-         if (t.length > 30) continue;
-
+         if (!t || t.length > 30) continue;
          const m = t.match(/(?:laps|vueltas)\s*[:]?\s*(\d+(?:\/\d+)?)/i);
          if (m) return m[1];
-         
          const m2 = t.match(/(\d+(?:\/\d+)?)\s*(?:laps|vueltas)/i);
          if (m2) return m2[1];
       }
-      
       return null;
     }
     function extractFlagFinish() {
       const byClass = document.querySelector('i.ico-flag-finish-xl') || document.querySelector('[class*="ico-flag-finish"]');
       if (byClass) return true;
-      // Removed heuristic checking for 'final' in session name as it causes false positives
       const svgFlag = Array.from(document.querySelectorAll('svg, i, span')).some(el => {
         const c = (el.getAttribute('class') || '').toLowerCase();
         return c.includes('flag') && (c.includes('finish') || c.includes('check'));
@@ -309,22 +265,15 @@ async function scrapeStandings({ debug = false, overrideUrl = null } = {}) {
         }
         
         let name = compCell;
-        // Robust cleanup of number from name (start and end)
         if (number) {
-           // Remove number from start (e.g. "118 .. Name")
-           // Escape number just in case, though usually safe
            const escNum = number.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); 
            const startRe = new RegExp(`^\\s*${escNum}[\\s.\\-]*`, "i");
            name = name.replace(startRe, "");
-           
-           // Remove number from end (e.g. "Name 118")
            const endRe = new RegExp(`[\\s.\\-]*${escNum}\\s*$`, "i");
            name = name.replace(endRe, "");
         } else {
-           // Fallback: remove leading digits if they look like a number
            name = name.replace(/^\s*\d{1,4}[\s.\\-]+/, "");
         }
-        // Final cleanup of any remaining leading/trailing separators
         name = name.replace(/^[\s.\\-]+/, "").replace(/[\s.\\-]+$/, "").trim();
 
         const positionCellSel = getSel('.datatable-cell-position');
@@ -336,14 +285,7 @@ async function scrapeStandings({ debug = false, overrideUrl = null } = {}) {
         const bestCellSel = getSel('.datatable-cell-best') || getSel('.datatable-cell-best-lap-time');
         const classCellSel = getSel('.datatable-cell-class');
         
-        // Check for checkered flag on individual row
-        const flagIcon = row.querySelector('.ico-flag-finish') || 
-                         row.querySelector('.flag-icon-finish') || 
-                         row.querySelector('.fa-flag-checkered') ||
-                         row.querySelector('[class*="finish-flag"]') ||
-                         row.querySelector('[class*="flag-finish"]') ||
-                         row.querySelector('img[alt*="finish" i]') ||
-                         row.querySelector('img[src*="finish" i]');
+        const flagIcon = row.querySelector('.ico-flag-finish') || row.querySelector('.flag-icon-finish') || row.querySelector('.fa-flag-checkered') || row.querySelector('[class*="finish-flag"]') || row.querySelector('[class*="flag-finish"]') || row.querySelector('img[alt*="finish" i]') || row.querySelector('img[src*="finish" i]');
         const hasFinishFlag = !!flagIcon;
 
         let position = safeParseInt(positionCellSel);
@@ -359,20 +301,9 @@ async function scrapeStandings({ debug = false, overrideUrl = null } = {}) {
           laps = safeParseInt(idx.laps >= 0 && idx.laps < cells.length ? text(cells[idx.laps]) : "");
         }
         out.push({
-          position,
-          number,
-          name,
-          class: classCellSel || "",
-          laps,
-          lastLap: lastCellSel,
-          diff: diffCellSel,
-          gap: gapCellSel,
-          totalTime: totalCellSel,
-          bestLap: bestCellSel,
-          hasFinishFlag
+          position, number, name, class: classCellSel || "", laps, lastLap: lastCellSel, diff: diffCellSel, gap: gapCellSel, totalTime: totalCellSel, bestLap: bestCellSel, hasFinishFlag
         });
       }
-      if (!out.length) return null;
       return wantDebug ? { rows: out, headers, idx } : out;
     }
     function extractFromNext() {
@@ -401,21 +332,12 @@ async function scrapeStandings({ debug = false, overrideUrl = null } = {}) {
       if (!headers.length) return null;
       const getIdx = label => headers.findIndex(h => h.includes(label));
       const idx = {
-        pos: getIdx("pos"),
-        comp: getIdx("competitor"),
-        laps: getIdx("laps"),
-        last: getIdx("last"),
-        diff: getIdx("diff"),
-        gap: getIdx("gap"),
-        total: getIdx("total"),
-        best: getIdx("best")
+        pos: getIdx("pos"), comp: getIdx("competitor"), laps: getIdx("laps"), last: getIdx("last"), diff: getIdx("diff"), gap: getIdx("gap"), total: getIdx("total"), best: getIdx("best")
       };
       const bodyRows = Array.from(document.querySelectorAll('[role=\"row\"]')).filter(r => !r.querySelector('[role=\"columnheader\"]'));
       const result = [];
       for (const tr of bodyRows) {
-        const flagIcon = tr.querySelector('.ico-flag-finish') || 
-                         tr.querySelector('[class*="flag-finish"]') || 
-                         tr.querySelector('[class*="finish-flag"]');
+        const flagIcon = tr.querySelector('.ico-flag-finish') || tr.querySelector('[class*="flag-finish"]') || tr.querySelector('[class*="finish-flag"]');
         const cells = Array.from(tr.querySelectorAll('[role="cell"], td, div'));
         function cell(i) { return i >= 0 && i < cells.length ? text(cells[i]) : ""; }
         const comp = cell(idx.comp);
@@ -423,20 +345,9 @@ async function scrapeStandings({ debug = false, overrideUrl = null } = {}) {
         const number = numberMatch ? numberMatch[1] : "";
         const name = numberMatch ? comp.replace(numberMatch[0], "").trim() : comp;
         result.push({
-          hasFinishFlag: !!flagIcon,
-          position: safeParseInt(cell(idx.pos)),
-          number,
-          name,
-          class: "",
-          laps: safeParseInt(cell(idx.laps)),
-          lastLap: cell(idx.last),
-          diff: cell(idx.diff),
-          gap: cell(idx.gap),
-          totalTime: cell(idx.total),
-          bestLap: cell(idx.best)
+          hasFinishFlag: !!flagIcon, position: safeParseInt(cell(idx.pos)), number, name, class: "", laps: safeParseInt(cell(idx.laps)), lastLap: cell(idx.last), diff: cell(idx.diff), gap: cell(idx.gap), totalTime: cell(idx.total), bestLap: cell(idx.best)
         });
       }
-      if (!result.length) return null;
       return wantDebug ? { rows: result, headers, idx } : result;
     }
     function extractFromTableTag() {
@@ -446,21 +357,12 @@ async function scrapeStandings({ debug = false, overrideUrl = null } = {}) {
       const headers = headerCells.map(h => text(h).toLowerCase());
       const getIdx = label => headers.findIndex(h => h.includes(label));
       const idx = {
-        pos: getIdx("pos"),
-        comp: getIdx("competitor"),
-        laps: getIdx("laps"),
-        last: getIdx("last"),
-        diff: getIdx("diff"),
-        gap: getIdx("gap"),
-        total: getIdx("total"),
-        best: getIdx("best")
+        pos: getIdx("pos"), comp: getIdx("competitor"), laps: getIdx("laps"), last: getIdx("last"), diff: getIdx("diff"), gap: getIdx("gap"), total: getIdx("total"), best: getIdx("best")
       };
       const bodyRows = Array.from(t.querySelectorAll("tbody tr"));
       const result = [];
       for (const tr of bodyRows) {
-        const flagIcon = tr.querySelector('.ico-flag-finish') || 
-                         tr.querySelector('[class*="flag-finish"]') || 
-                         tr.querySelector('[class*="finish-flag"]');
+        const flagIcon = tr.querySelector('.ico-flag-finish') || tr.querySelector('[class*="flag-finish"]') || tr.querySelector('[class*="finish-flag"]');
         const cells = Array.from(tr.children);
         function cell(i) { return i >= 0 && i < cells.length ? text(cells[i]) : ""; }
         const comp = cell(idx.comp);
@@ -468,20 +370,9 @@ async function scrapeStandings({ debug = false, overrideUrl = null } = {}) {
         const number = numberMatch ? numberMatch[1] : "";
         const name = numberMatch ? comp.replace(numberMatch[0], "").trim() : comp;
         result.push({
-          hasFinishFlag: !!flagIcon,
-          position: safeParseInt(cell(idx.pos)),
-          number,
-          name,
-          class: "",
-          laps: safeParseInt(cell(idx.laps)),
-          lastLap: cell(idx.last),
-          diff: cell(idx.diff),
-          gap: cell(idx.gap),
-          totalTime: cell(idx.total),
-          bestLap: cell(idx.best)
+          hasFinishFlag: !!flagIcon, position: safeParseInt(cell(idx.pos)), number, name, class: "", laps: safeParseInt(cell(idx.laps)), lastLap: cell(idx.last), diff: cell(idx.diff), gap: cell(idx.gap), totalTime: cell(idx.total), bestLap: cell(idx.best)
         });
       }
-      if (!result.length) return null;
       return wantDebug ? { rows: result, headers, idx } : result;
     }
     function stats(list) {
@@ -495,8 +386,6 @@ async function scrapeStandings({ debug = false, overrideUrl = null } = {}) {
       if (m1) return { kind: "pos_up", number: parseInt(m1[1],10), delta: parseInt(m1[2],10), toPos: parseInt(m1[3],10), text: msg };
       const m2 = msg.match(/Number\s+(\d+)\s+has just dropped to\s+(\d+)/i);
       if (m2) return { kind: "pos_down", number: parseInt(m2[1],10), toPos: parseInt(m2[2],10), text: msg };
-      const m3 = msg.match(/Number\s+(\d+)\s+has reduced the gap to Number\s+(\d+)\s+to\s+([0-9:.]+)/i);
-      if (m3) return { kind: "gap_reduce", number: parseInt(m3[1],10), target: parseInt(m3[2],10), gap: m3[3], text: msg };
       const m4 = msg.match(/Here comes Number\s+(\d+).*Number\s+(\d+)/i);
       if (m4) return { kind: "chase", number: parseInt(m4[1],10), target: parseInt(m4[2],10), text: msg };
       return { kind: "text", text: msg };
@@ -527,68 +416,39 @@ async function scrapeStandings({ debug = false, overrideUrl = null } = {}) {
       }
       return items.slice(0, 6);
     }
+    
     let source = null;
     let payload = extractFromDataTable();
     if (payload) source = "datatable";
-    // Debug output for progress scraping (removed spammy log)
-    // if (payload && payload.length > 0) { ... }
-    
     if (!payload) { payload = extractFromRoles(); if (payload) source = "roles"; }
     if (!payload) { payload = extractFromTableTag(); if (payload) source = "table"; }
     if (!payload) { payload = extractFromNext(); if (payload) source = "next"; }
-    
-    // Generic fallback for list-based layouts
     if (!payload) {
       function extractGenericList() {
-         // Look for common row containers
          const candidates = Array.from(document.querySelectorAll('div, li, tr'));
          const potentialRows = [];
-         
          for (const el of candidates) {
-            // Check if element has children that look like number and name
             const textContent = text(el);
-            // Must start with a number (position)
             if (!/^\d+\s+[A-Za-z]/.test(textContent)) continue;
-            // Must have reasonable length
             if (textContent.length < 5 || textContent.length > 200) continue;
-            
-            // Try to split by common delimiters or spacing
             const parts = textContent.split(/\s+/);
             if (parts.length < 3) continue;
-            
-            // Very naive check: if it contains a time-like string
             if (!/\d+:\d+\.\d+/.test(textContent) && !/\d+\.\d+/.test(textContent) && !/Laps/.test(textContent)) continue;
-
-            // Avoid header-like rows
             if (/Pos|Name|Gap|Diff/i.test(textContent)) continue;
-
             potentialRows.push({
-               position: parseInt(parts[0]) || 0,
-               number: parts[1] || "",
-               name: parts.slice(2, 5).join(" "), // heuristic
-               laps: 0,
-               lastLap: "",
-               diff: "",
-               gap: "",
-               totalTime: "",
-               bestLap: ""
+               position: parseInt(parts[0]) || 0, number: parts[1] || "", name: parts.slice(2, 5).join(" "), laps: 0, lastLap: "", diff: "", gap: "", totalTime: "", bestLap: ""
             });
-            if (potentialRows.length > 50) break; // limit
+            if (potentialRows.length > 50) break;
          }
-         // Filter to only keep if we found a sequence (e.g. 1, 2, 3...)
          if (potentialRows.length >= 3) {
-             // sort by position to see if it makes sense
              potentialRows.sort((a,b) => a.position - b.position);
-             const isSequential = potentialRows.slice(0, 3).every((r, i) => r.position === i + 1 || r.position === i + 2); // lenient
+             const isSequential = potentialRows.slice(0, 3).every((r, i) => r.position === i + 1 || r.position === i + 2);
              if (isSequential) return potentialRows;
          }
          return null;
       }
       const generic = extractGenericList();
-      if (generic) {
-          payload = generic;
-          source = "generic_list_scan";
-      }
+      if (generic) { payload = generic; source = "generic_list_scan"; }
     }
 
     const rows = wantDebug ? (payload?.rows || []) : (payload || []);
@@ -597,160 +457,99 @@ async function scrapeStandings({ debug = false, overrideUrl = null } = {}) {
     const flagFinish = extractFlagFinish();
     const announcements = extractAnnouncements();
     const dbg = wantDebug ? { 
-        sourceMethod: source, 
-        headers: payload?.headers || [], 
-        idx: payload?.idx || {}, 
-        stats: stats(rows),
-        pageTitle: document.title,
-        bodyPreview: document.body.innerText.substring(0, 2000),
-        htmlPreview: document.documentElement.outerHTML.substring(0, 2000)
+        sourceMethod: source, headers: payload?.headers || [], idx: payload?.idx || {}, stats: stats(rows), pageTitle: document.title, bodyPreview: document.body.innerText.substring(0, 2000), htmlPreview: document.documentElement.outerHTML.substring(0, 2000)
     } : null;
     return { rows, sessionName, sessionLaps, flagFinish, announcements, debug: dbg };
-  }, debug === true),
-  new Promise((_, reject) => setTimeout(() => reject(new Error("Scrape evaluation timeout")), 30000))
-  ]);
+};
 
-  // Close browser immediately after data extraction to free resources (Stateless approach)
-  console.log("Scrape successful, closing browser instance.");
-  
-  // Optimization: Don't await close() to return data to client faster. Let it close in background.
-  if (b) {
-      const browserToClose = b;
-      const tClose = Date.now();
-      browserToClose.close()
-        .then(() => console.log(`Browser instance closed completely in ${Date.now() - tClose}ms (background).`))
-        .catch(e => console.error("Error closing browser in background:", e));
+// --- BACKGROUND LOOP ---
+
+async function tick() {
+  if (!scrapingEnabled || !speedhiveUrl) {
+    return;
   }
-  b = null; p = null;
 
-  if (!overrideUrl) {
+  const p = await ensurePage(speedhiveUrl);
+  if (!p) return; // Browser initializing or error
+
+  try {
+    const result = await p.evaluate(SCRAPE_FUNCTION, false);
+    
+    // Logic to merge/stabilize data (same as before)
     const isEmpty = !result.rows || result.rows.length === 0;
     const hasOldData = lastData.standings && lastData.standings.length > 0;
-
-    // Helper to determine if we are likely in the same session despite minor scrape glitches
     const cleanName = (n) => (n || "").toLowerCase().replace(/\s+/g, "").replace(/speedhive|mylaps|loading/gi, "").replace(/lap\d+/gi, "").replace(/vuelta\d+/gi, "").replace(/\d+\/\d+/g, "");
     const s1 = cleanName(result.sessionName);
     const s2 = cleanName(lastData.sessionName);
-    // If one of them is empty/generic (after clean), we assume continuity. 
-    // Only return false if both are substantial and different.
-    const isDifferentSession = s1 && s2 && s1 !== s2;
-    const sameSession = !isDifferentSession;
+    const sameSession = !(!s1 || !s2) && (s1 === s2 || s1.includes(s2) || s2.includes(s1));
 
     if (isEmpty && hasOldData && sameSession) {
-        console.log("Scrape returned empty results for same session - preserving previous data.");
-        // Update timestamp to show we are still alive
         lastData.updatedAt = Date.now();
-        // Update announcements if available, otherwise keep old ones (implicit in returning lastData)
         if (result.announcements && result.announcements.length) {
             lastData.announcements = result.announcements;
         }
-        return lastData;
+    } else {
+        let finalAnnouncements = result.announcements || [];
+        if (finalAnnouncements.length === 0 && sameSession && lastData.announcements && lastData.announcements.length > 0) {
+           finalAnnouncements = lastData.announcements;
+        }
+        let finalSessionName = result.sessionName || "";
+        if ((!finalSessionName || /speedhive|mylaps|loading/i.test(finalSessionName)) && lastData.sessionName) {
+            finalSessionName = lastData.sessionName;
+        }
+        lastData = { 
+            standings: result.rows, 
+            sessionName: finalSessionName, 
+            sessionLaps: result.sessionLaps || "", 
+            flagFinish: !!result.flagFinish, 
+            announcements: finalAnnouncements, 
+            updatedAt: Date.now() 
+        };
     }
-
-    // Logic to prevent announcement flickering:
-    // If we have valid rows (not empty), but announcements are empty, 
-    // and it's the same session, preserve the old announcements.
-    let finalAnnouncements = result.announcements || [];
-    if (finalAnnouncements.length === 0 && sameSession && lastData.announcements && lastData.announcements.length > 0) {
-       finalAnnouncements = lastData.announcements;
+  } catch (e) {
+    console.error("Tick scrape error:", e.message);
+    // If error is related to target closed, reset
+    if (e.message.includes("Target closed") || e.message.includes("Session closed")) {
+        globalPage = null;
+        globalBrowser = null;
+        lastUrl = "";
     }
-    
-    // Also stabilize Session Name if the new one is missing/generic but we had a good one
-    let finalSessionName = result.sessionName || "";
-    if ((!finalSessionName || /speedhive|mylaps|loading/i.test(finalSessionName)) && lastData.sessionName) {
-        finalSessionName = lastData.sessionName;
-    }
-
-    lastData = { standings: result.rows, sessionName: finalSessionName, sessionLaps: result.sessionLaps || "", flagFinish: !!result.flagFinish, announcements: finalAnnouncements, updatedAt: Date.now() };
-    lastFetchTs = Date.now();
-    return lastData;
-  } else {
-    return { standings: result.rows, sessionName: result.sessionName || "", sessionLaps: result.sessionLaps || "", flagFinish: !!result.flagFinish, announcements: result.announcements || [], updatedAt: Date.now(), debug: result.debug };
   }
-} catch (e) {
-  console.log("Scrape Error:", String(e));
+}
+
+// Start the loop (approx every 1s)
+setInterval(tick, 1000);
+
+// --- ENDPOINTS ---
+
+app.get("/api/standings", async (req, res) => {
+  const debug = req.query?.debug === "1";
+  const testUrl = req.query?.url;
   
-  // Ensure browser is closed on error
-  if (b) {
-      b.close().catch(() => {});
-  }
-  b = null; p = null;
-
-  // Return last known good data instead of clearing the screen on error
-  console.log("Returning last valid data due to scrape error.");
-  return { 
-      standings: lastData.standings || [], 
-      sessionName: lastData.sessionName || "", 
-      sessionLaps: lastData.sessionLaps || "", 
-      flagFinish: !!lastData.flagFinish, 
-      announcements: lastData.announcements || [], 
-      updatedAt: Date.now() 
-  };
-}
-}
-
-async function executeScrape({ debug = false, overrideUrl = null } = {}) {
-  // Wait for previous scrape
-  let waitCount = 0;
-  while (scrapePromise) {
-     if (waitCount++ > 50) { // 5 seconds
-        throw new Error("Scrape queue timeout - previous scrape stuck");
-     }
-     try { await Promise.race([scrapePromise, delay(100)]); } catch (e) {}
-  }
-
-  const myPromise = scrapeStandings({ debug, overrideUrl });
-  scrapePromise = myPromise;
-
-  try {
-    return await myPromise;
-  } finally {
-    if (scrapePromise === myPromise) {
-      scrapePromise = null;
-    }
-  }
-}
-
-app.get("/api/standings", async (_req, res) => {
-  try {
-    const debug = _req.query?.debug === "1";
-    const testUrl = typeof _req.query?.url === "string" ? _req.query.url : null;
-    const force = _req.query?.force === "1";
-
-    // 0. Check if scraping is globally disabled (and not forced)
-    if (!scrapingEnabled && !force && !debug && !testUrl) {
-        res.json({ source: speedhiveUrl, updatedAt: lastData.updatedAt || Date.now(), sessionName: lastData.sessionName || "", sessionLaps: lastData.sessionLaps || "", flagFinish: !!lastData.flagFinish, standings: lastData.standings || [], announcements: lastData.announcements || [], status: "paused" });
-        return;
-    }
-
-    // 1. Check cache for standard polling requests (no debug/force/testUrl)
-    if (!testUrl && !force && !debug && Date.now() - lastFetchTs < MIN_FETCH_INTERVAL && lastData.standings.length) {
-      res.json({ source: speedhiveUrl, updatedAt: lastData.updatedAt, sessionName: lastData.sessionName || "", sessionLaps: lastData.sessionLaps || "", flagFinish: !!lastData.flagFinish, standings: lastData.standings, announcements: lastData.announcements || [] });
+  // Normal high-performance path
+  if (!debug && !testUrl) {
+      res.json(lastData);
       return;
-    }
+  }
 
-    // 2. If a scrape is already running...
-    if (scrapePromise) {
-      if (!testUrl && !force && !debug) {
-         // Standard poll: return cached data immediately if busy
-         res.json({ source: speedhiveUrl, updatedAt: lastData.updatedAt || Date.now(), sessionName: lastData.sessionName || "", sessionLaps: lastData.sessionLaps || "", flagFinish: !!lastData.flagFinish, standings: lastData.standings || [], announcements: lastData.announcements || [] });
-         return;
-      }
-      // Debug/Force/TestUrl: Wait for the current scrape to finish to avoid race conditions
-      try { await scrapePromise; } catch (e) {}
-    }
-
-    // 3. Start new scrape (serialized)
-    const data = await executeScrape({ debug, overrideUrl: testUrl });
-    
-    res.json({ source: testUrl || speedhiveUrl, updatedAt: data.updatedAt, sessionName: data.sessionName || "", sessionLaps: data.sessionLaps || "", flagFinish: !!data.flagFinish, standings: Array.isArray(data.standings) ? data.standings : [], announcements: data.announcements || [], debug: data.debug });
-  } catch (err) {
-    console.error("Scrape Error:", err);
-    let errorMsg = String(err);
-    if (errorMsg.includes("Could not find Chrome")) {
-      errorMsg += " (HINT: Ensure Render service is set to 'Docker' Runtime)";
-    }
-    res.json({ source: speedhiveUrl, updatedAt: Date.now(), sessionName: lastData.sessionName || "", flagFinish: !!lastData.flagFinish, standings: lastData.standings || [], announcements: lastData.announcements || [], error: errorMsg });
+  // Debug/Test path (slower, on-demand)
+  try {
+      let targetUrl = testUrl || speedhiveUrl;
+      const p = await ensurePage(targetUrl);
+      if (!p) throw new Error("Could not initialize browser");
+      const result = await p.evaluate(SCRAPE_FUNCTION, true);
+      res.json({
+          source: targetUrl,
+          updatedAt: Date.now(),
+          sessionName: result.sessionName,
+          sessionLaps: result.sessionLaps,
+          flagFinish: result.flagFinish,
+          standings: result.rows,
+          announcements: result.announcements,
+          debug: result.debug
+      });
+  } catch (e) {
+      res.status(500).json({ error: String(e.message) });
   }
 });
 
@@ -761,13 +560,15 @@ app.get("/api/config", (_req, res) => {
 app.post("/api/config", async (req, res) => {
   try {
     const { speedhiveUrl: nextUrl, overlayEnabled: nextOverlayEnabled, scrapingEnabled: nextScrapingEnabled, initialData } = req.body || {};
+    
     if (typeof nextUrl === "string" && /^https?:\/\//i.test(nextUrl)) {
       if (nextUrl !== speedhiveUrl) {
         speedhiveUrl = nextUrl;
+        console.log("Config: URL changed to", speedhiveUrl);
+        // Reset URL tracking so the loop navigates immediately
+        lastUrl = ""; 
         
-        if (initialData && Array.isArray(initialData.standings) && initialData.standings.length > 0) {
-            console.log("Configuration updated: Using provided initial data to avoid re-scrape delay.");
-            // Adopt the data immediately
+        if (initialData && Array.isArray(initialData.standings)) {
             lastData = { 
                 standings: initialData.standings, 
                 sessionName: initialData.sessionName || "", 
@@ -776,39 +577,12 @@ app.post("/api/config", async (req, res) => {
                 announcements: initialData.announcements || [], 
                 updatedAt: Date.now() 
             };
-            lastFetchTs = Date.now();
-            
-            // Trigger background scrape (non-blocking) to keep it fresh, but don't wait for it
-            executeScrape().catch(e => console.error("Background scrape failed:", e));
-        } else {
-            // Reset lastData partially to avoid confusion, but we will immediately refill it.
-            lastData = { standings: [], sessionName: "", flagFinish: false, announcements: [], updatedAt: 0 };
-            lastFetchTs = 0;
-            
-            // Trigger immediate scrape and wait for it
-            console.log("Configuration updated: forcing immediate scrape for new URL...");
-            try {
-                await executeScrape();
-            } catch (e) {
-                console.error("Immediate scrape failed:", e);
-            }
         }
       }
     }
-    if (typeof nextOverlayEnabled === "boolean") {
-      overlayEnabled = nextOverlayEnabled;
-    }
-    if (typeof nextScrapingEnabled === "boolean") {
-      scrapingEnabled = nextScrapingEnabled;
-    }
+    if (typeof nextOverlayEnabled === "boolean") overlayEnabled = nextOverlayEnabled;
+    if (typeof nextScrapingEnabled === "boolean") scrapingEnabled = nextScrapingEnabled;
     
-    // No persist config - memory only
-    // try {
-    //   fs.writeFileSync(CONFIG_FILE, JSON.stringify({ speedhiveUrl, overlayEnabled, scrapingEnabled }));
-    // } catch (e) {
-    //   console.error("Error saving config:", e);
-    // }
-
     res.json({ ok: true, speedhiveUrl, overlayEnabled, scrapingEnabled });
   } catch (e) {
     res.status(500).json({ error: String(e) });
@@ -827,4 +601,5 @@ app.get("/results", (_req, res) => {
 
 app.listen(PORT, () => {
   console.log(`OBS overlay server on http://localhost:${PORT}/`);
+  console.log(`Background scraping loop active: ${scrapingEnabled ? "YES" : "NO"}`);
 });

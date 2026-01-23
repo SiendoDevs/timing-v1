@@ -235,7 +235,7 @@ export default function App() {
     if (showOverlay) {
       load();
     }
-    const t = showOverlay ? setInterval(load, 5000) : null;
+    const t = showOverlay ? setInterval(load, 1000) : null;
     const mt = showOverlay ? setInterval(() => {
       setModeIdx(prev => (prev + 1) % MODES.length);
     }, 6000) : null;

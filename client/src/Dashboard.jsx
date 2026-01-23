@@ -26,6 +26,38 @@ export default function Dashboard() {
   const [debug, setDebug] = useState(null);
   const [previewRows, setPreviewRows] = useState([]);
   const [fullData, setFullData] = useState(null);
+  const [updateDuration, setUpdateDuration] = useState(null);
+
+  useEffect(() => {
+    const apiOrigin = import.meta.env.VITE_API_URL || "";
+    
+    const fetchLoop = async () => {
+      try {
+        const t0 = performance.now();
+        const res = await fetch(`${apiOrigin}/api/standings`);
+        const data = await res.json();
+        const t1 = performance.now();
+        
+        setUpdateDuration(Math.round(t1 - t0));
+        
+        if (data) {
+          if (data.updatedAt) setLastUpdated(data.updatedAt);
+          if (data.sessionName) setSessionName(data.sessionName);
+          if (Array.isArray(data.standings)) {
+            setPreviewRows(data.standings.slice(0, 12));
+            setFullData(data);
+          }
+        }
+      } catch (e) {
+        console.error("Dashboard loop error:", e);
+      }
+    };
+
+    const interval = setInterval(fetchLoop, 1000);
+    fetchLoop(); // Initial fetch
+
+    return () => clearInterval(interval);
+  }, []);
 
   async function loadConfig() {
     const apiOrigin = import.meta.env.VITE_API_URL || "";
@@ -155,6 +187,7 @@ export default function Dashboard() {
           <div className="ml-auto flex items-center gap-2">
             <span className={`px-2.5 py-1 rounded-md text-sm font-bold bg-white/10 border border-white/10 ${overlayEnabled ? "" : "bg-[var(--accent)] text-black"}`}>{overlayEnabled ? "Overlay visible" : "Overlay oculto"}</span>
             {sessionName && <span className="px-2.5 py-1 rounded-md text-sm font-bold bg-white/10 border border-white/10">{sessionName}</span>}
+            {updateDuration !== null && <span className="px-2.5 py-1 rounded-md text-sm font-bold bg-white/10 border border-white/10 text-yellow-400">Latencia: {updateDuration}ms</span>}
             {lastUpdated && <span className="px-2.5 py-1 rounded-md text-sm font-bold bg-white/10 border border-white/10">{new Date(lastUpdated).toLocaleTimeString()}</span>}
           </div>
         </div>
