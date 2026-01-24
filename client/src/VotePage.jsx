@@ -8,6 +8,7 @@ export default function VotePage() {
   const [voted, setVoted] = useState(false);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
+  const [currentVoteId, setCurrentVoteId] = useState("");
 
   // Load voting status
   useEffect(() => {
@@ -20,6 +21,21 @@ export default function VotePage() {
         
         setStatus(data.active ? "active" : "closed");
         setCandidates(data.candidates || []);
+        
+        // Handle Vote ID for duplicate voting prevention
+        const serverVoteId = data.voteId || "";
+        setCurrentVoteId(serverVoteId);
+
+        if (data.active && serverVoteId) {
+           const localLastId = localStorage.getItem("lastVoteId");
+           setVoted(localLastId === serverVoteId);
+        } else {
+           // If not active, we don't block based on 'voted', 
+           // but the 'closed' status UI will take precedence anyway.
+           // We can reset voted to false to be clean.
+           setVoted(false);
+        }
+
       } catch (e) {
         setStatus("error");
       } finally {
@@ -29,12 +45,6 @@ export default function VotePage() {
     load();
     const t = setInterval(load, 3000); // Poll status every 3s
     return () => clearInterval(t);
-  }, []);
-
-  // Check if already voted (simple local storage check)
-  useEffect(() => {
-    const hasVoted = localStorage.getItem("hasVoted");
-    if (hasVoted) setVoted(true);
   }, []);
 
   async function handleVote(candidateNumber) {
@@ -50,7 +60,9 @@ export default function VotePage() {
       
       if (res.ok) {
         setVoted(true);
-        localStorage.setItem("hasVoted", "true");
+        if (currentVoteId) {
+            localStorage.setItem("lastVoteId", currentVoteId);
+        }
         setMessage("¡Gracias por tu voto!");
       } else {
         const d = await res.json();

@@ -652,7 +652,8 @@ let useRedis = false;
 let memoryVoting = {
   candidates: [],
   votes: {},
-  active: false
+  active: false,
+  voteId: ""
 };
 
 // Initialize Redis if URL provided
@@ -676,6 +677,7 @@ let memoryVoting = {
 async function getVotingStatus() {
   if (useRedis) {
     const active = await redisClient.get('timing_voting:active') === 'true';
+    const voteId = await redisClient.get('timing_voting:id') || "";
     const candidatesStr = await redisClient.get('timing_voting:candidates');
     const candidates = candidatesStr ? JSON.parse(candidatesStr) : [];
     
@@ -694,7 +696,7 @@ async function getVotingStatus() {
       c.percent = totalVotes > 0 ? ((c.votes / totalVotes) * 100).toFixed(1) : 0;
     });
     
-    return { active, candidates: resultCandidates, totalVotes };
+    return { active, voteId, candidates: resultCandidates, totalVotes };
   } else {
     // Memory implementation
     const totalVotes = Object.values(memoryVoting.votes).reduce((a, b) => a + b, 0);
@@ -706,7 +708,7 @@ async function getVotingStatus() {
         percent: totalVotes > 0 ? ((votes / totalVotes) * 100).toFixed(1) : 0
       };
     });
-    return { active: memoryVoting.active, candidates: resultCandidates, totalVotes };
+    return { active: memoryVoting.active, voteId: memoryVoting.voteId, candidates: resultCandidates, totalVotes };
   }
 }
 
@@ -726,6 +728,8 @@ app.post("/api/voting/start", async (req, res) => {
       return res.status(400).json({ error: "Invalid candidates list" });
     }
 
+    const newVoteId = Date.now().toString();
+
     if (useRedis) {
       // Clear previous voting data - ONLY for this app namespace
       const keys = await redisClient.keys('timing_voting:*');
@@ -733,13 +737,15 @@ app.post("/api/voting/start", async (req, res) => {
       
       await redisClient.set('timing_voting:candidates', JSON.stringify(candidates));
       await redisClient.set('timing_voting:active', 'true');
+      await redisClient.set('timing_voting:id', newVoteId);
     } else {
       memoryVoting.candidates = candidates;
       memoryVoting.votes = {};
       memoryVoting.active = true;
+      memoryVoting.voteId = newVoteId;
     }
     
-    res.json({ ok: true });
+    res.json({ ok: true, voteId: newVoteId });
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }
