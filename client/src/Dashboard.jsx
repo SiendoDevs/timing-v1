@@ -17,12 +17,13 @@ function Input({ label, value, onChange, placeholder }) {
   );
 }
 
-function SectionHeader({ title, color = "var(--accent)", icon }) {
+function SectionHeader({ title, color = "var(--accent)", icon, status }) {
   return (
     <div className="px-5 py-4 border-b border-white/5 flex items-center gap-3 bg-white/5">
       <div className="w-1.5 h-4 -skew-x-12" style={{ background: color }} />
       <div className="font-black italic uppercase tracking-tight text-lg">{title}</div>
-      {icon && <div className="ml-auto opacity-50">{icon}</div>}
+      {status && <div className="ml-auto text-xs font-mono text-white/60 truncate max-w-[200px] animate-pulse">{status}</div>}
+      {icon && <div className={`${status ? "ml-3" : "ml-auto"} opacity-50`}>{icon}</div>}
     </div>
   );
 }
@@ -296,6 +297,7 @@ export default function Dashboard() {
           </div>
 
           <div className="ml-auto flex items-center gap-3 text-xs font-mono">
+             {status && <div className="text-white/60 uppercase tracking-wider animate-pulse mr-4">{status}</div>}
              <button 
                 onClick={() => saveConfig({ scrapingEnabled: !scrapingEnabled })}
                 className={`px-3 py-1 rounded font-bold uppercase transition-all border ${
@@ -323,7 +325,7 @@ export default function Dashboard() {
           
           {/* Connection Card */}
           <div className="bg-[#141414] rounded-xl border border-white/5 overflow-hidden shadow-2xl shrink-0">
-            <SectionHeader title="Fuente de Datos" icon="📡" />
+            <SectionHeader title="Fuente de Datos" icon="📡" status={status} />
             <div className="p-4 space-y-4">
               <Input
                 label="Speedhive URL"
@@ -335,7 +337,6 @@ export default function Dashboard() {
                  <ActionButton onClick={() => saveConfig()} disabled={saving} label="Guardar" type="normal" />
                  <ActionButton onClick={probar} label="Test Conn" type="link" />
               </div>
-              {status && <div className="text-xs text-center font-mono opacity-50 pt-2 border-t border-white/5">{status}</div>}
             </div>
           </div>
 

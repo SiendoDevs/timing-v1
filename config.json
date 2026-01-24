@@ -4,8 +4,8 @@
   "scrapingEnabled": true,
   "commentsEnabled": true,
   "votingWidgetEnabled": true,
-  "overtakesEnabled": true,
+  "overtakesEnabled": false,
   "currentLapEnabled": true,
-  "fastestLapEnabled": true,
+  "fastestLapEnabled": false,
   "lapFinishEnabled": true
 }
