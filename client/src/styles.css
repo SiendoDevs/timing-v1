@@ -6,7 +6,7 @@
   --bg: rgba(0,0,0,0.0);
   --panel: rgba(0,0,0,0.80);
   --text: #f5f7fa;
-  --accent: #ffd400;
+  --accent: #D8552B;
   --overlay-wpx: 380;
   --overlay-m: 24;
   --header-bg: #D8552B;
@@ -129,6 +129,55 @@ tr td {
   animation: progressFillTemp 2s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
 }
 
-.fade-in.zoom-in {
-  animation-name: fadeIn, zoomIn;
+/* Background Animation */
+@keyframes gradientMove {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.bg-animated-orange {
+  background: linear-gradient(315deg, #2e0b02, #140401, #0a0a0a, #0a0a0a, #0a0a0a);
+  background-size: 400% 400%;
+  animation: gradientMove 5s ease infinite;
+}
+
+/* Passing Lines Animation */
+.bg-lines-container {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.bg-line-glow {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.05), transparent);
+  transform: skewX(-25deg);
+  filter: blur(8px);
+}
+
+/* Thin lines */
+.bg-line-glow.thin { width: 50px; background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.02), transparent); filter: blur(4px); }
+/* Medium lines */
+.bg-line-glow.medium { width: 150px; background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.04), transparent); filter: blur(15px); }
+/* Thick lines */
+.bg-line-glow.thick { width: 300px; background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.015), transparent); filter: blur(40px); }
+
+/* Animation instances */
+.bg-line-glow:nth-child(1) { left: -20%; animation: linePass 7s infinite linear; }
+.bg-line-glow:nth-child(2) { left: -20%; animation: linePass 11s infinite linear 3s; }
+.bg-line-glow:nth-child(3) { left: -20%; animation: linePass 5s infinite linear 1s; }
+.bg-line-glow:nth-child(4) { left: -20%; animation: linePass 9s infinite linear 5s; }
+.bg-line-glow:nth-child(5) { left: -20%; animation: linePass 14s infinite linear 2s; }
+.bg-line-glow:nth-child(6) { left: -20%; animation: linePass 6s infinite linear 4s; }
+
+@keyframes linePass {
+  0% { transform: translateX(-50vw) skewX(-25deg); opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { transform: translateX(150vw) skewX(-25deg); opacity: 0; }
 }

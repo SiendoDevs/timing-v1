@@ -24,12 +24,12 @@ export default function Announcements({ items }) {
         style={{
           opacity: a,
           scale: a.to([0, 1], [0.9, 1]),
-          background: "#000000"
+          background: "#141414"
         }}
-        className="rounded-xl overflow-hidden shadow-[0_8px_28px_rgba(0,0,0,0.35)] backdrop-blur-sm h-[45px] flex items-center px-5 font-bold tracking-tight whitespace-nowrap border border-white/10"
+        className="rounded-xl overflow-hidden shadow-[0_8px_28px_rgba(0,0,0,0.5)] h-[45px] flex items-center px-5 font-bold tracking-tight whitespace-nowrap border border-white/5"
       >
         <div className="flex items-center gap-3 text-white">
-          <Megaphone color="#ffd400" style={{ width: "1.2em", height: "1.2em" }} />
+          <Megaphone className="text-[var(--accent)]" style={{ width: "1.2em", height: "1.2em" }} />
           {list.map((x, i) => (
             <div key={i} className="flex items-center text-nowrap gap-2 pr-4">
               {x.time && <span className="opacity-60">{x.time}</span>}

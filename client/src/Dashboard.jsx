@@ -1,25 +1,78 @@
-import React, { useEffect, useState } from "react";
- 
+import React, { useEffect, useState, useRef } from "react";
+import { QRCodeSVG } from "qrcode.react";
+
+// --- Components ---
 
 function Input({ label, value, onChange, placeholder }) {
   return (
-    <label className="block">
-      <div className="text-sm opacity-80 mb-1">{label}</div>
+    <label className="block w-full">
+      <div className="text-xs font-bold uppercase tracking-wider opacity-60 mb-1.5">{label}</div>
       <input
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full px-3 py-2 rounded-md bg-black/40 border border-white/10 outline-none focus:ring-2 focus:ring-white/20 focus:border-white/20 text-[14px]"
+        className="w-full px-4 py-2.5 rounded bg-black/40 border border-white/10 outline-none focus:ring-2 focus:ring-[var(--accent)] focus:border-transparent text-sm font-mono transition-all"
       />
     </label>
   );
 }
 
+function SectionHeader({ title, color = "var(--accent)", icon }) {
+  return (
+    <div className="px-5 py-4 border-b border-white/5 flex items-center gap-3 bg-white/5">
+      <div className="w-1.5 h-4 -skew-x-12" style={{ background: color }} />
+      <div className="font-black italic uppercase tracking-tight text-lg">{title}</div>
+      {icon && <div className="ml-auto opacity-50">{icon}</div>}
+    </div>
+  );
+}
+
+function StatusBadge({ active, labelActive, labelInactive }) {
+  return (
+    <span className={`px-2.5 py-1 rounded text-xs font-bold uppercase tracking-wide border ${
+      active 
+        ? "bg-green-500/10 border-green-500/20 text-green-400" 
+        : "bg-red-500/10 border-red-500/20 text-red-400"
+    }`}>
+      {active ? labelActive : labelInactive}
+    </span>
+  );
+}
+
+function ActionButton({ onClick, disabled, active, label, activeLabel, type = "normal", icon }) {
+  let baseClass = "w-full px-4 py-3 font-bold uppercase italic tracking-wider rounded text-sm transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed";
+  
+  const types = {
+    normal: active 
+      ? "bg-white/10 text-white border border-white/10 hover:bg-white/20"
+      : "bg-[var(--accent)] text-black border border-transparent hover:brightness-110",
+    danger: active
+      ? "bg-red-500/20 text-red-200 border border-red-500/30 hover:bg-red-500/30"
+      : "bg-green-500/20 text-green-200 border border-green-500/30 hover:bg-green-500/30",
+    link: "bg-white/5 hover:bg-white/10 border border-white/5 text-xs font-mono"
+  };
+
+  const currentLabel = active && activeLabel ? activeLabel : label;
+
+  return (
+    <button onClick={onClick} disabled={disabled} className={`${baseClass} ${types[type]}`}>
+      {icon && <span>{icon}</span>}
+      {currentLabel}
+    </button>
+  );
+}
+
 export default function Dashboard() {
+  // State
   const [url, setUrl] = useState("");
   const [overlayEnabled, setOverlayEnabled] = useState(true);
   const [scrapingEnabled, setScrapingEnabled] = useState(true);
   const [commentsEnabled, setCommentsEnabled] = useState(true);
+  const [votingWidgetEnabled, setVotingWidgetEnabled] = useState(true);
+  const [overtakesEnabled, setOvertakesEnabled] = useState(true);
+  const [currentLapEnabled, setCurrentLapEnabled] = useState(true);
+  const [fastestLapEnabled, setFastestLapEnabled] = useState(true);
+  const [lapFinishEnabled, setLapFinishEnabled] = useState(true);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState("");
   const [lastUpdated, setLastUpdated] = useState(null);
@@ -28,37 +81,69 @@ export default function Dashboard() {
   const [previewRows, setPreviewRows] = useState([]);
   const [fullData, setFullData] = useState(null);
   const [updateDuration, setUpdateDuration] = useState(null);
+  const [raceFlag, setRaceFlag] = useState("GREEN");
+  const [blackFlagNum, setBlackFlagNum] = useState("");
+  
+  const savingRef = useRef(false);
+  useEffect(() => { savingRef.current = saving; }, [saving]);
 
+  // Voting State
+  const [votingActive, setVotingActive] = useState(false);
+  const [votingCandidates, setVotingCandidates] = useState([]);
+  const [selectedCandidates, setSelectedCandidates] = useState([]);
+  const [voteStats, setVoteStats] = useState({ totalVotes: 0, candidates: [] });
+
+  // Effects & Logic
   useEffect(() => {
     const apiOrigin = import.meta.env.VITE_API_URL || "";
-    
     const fetchLoop = async () => {
       try {
         const t0 = performance.now();
         const res = await fetch(`${apiOrigin}/api/standings`);
         const data = await res.json();
-        const t1 = performance.now();
-        
-        setUpdateDuration(Math.round(t1 - t0));
+        setUpdateDuration(Math.round(performance.now() - t0));
         
         if (data) {
           if (data.updatedAt) setLastUpdated(data.updatedAt);
           if (data.sessionName) setSessionName(data.sessionName);
+          if (data.raceFlag) setRaceFlag(data.raceFlag);
           if (Array.isArray(data.standings)) {
             setPreviewRows(data.standings.slice(0, 12));
             setFullData(data);
           }
         }
-      } catch (e) {
-        console.error("Dashboard loop error:", e);
-      }
+
+        const vRes = await fetch(`${apiOrigin}/api/voting/status`);
+        if (vRes.ok) {
+          const vData = await vRes.json();
+          setVotingActive(vData.active);
+          setVoteStats({ totalVotes: vData.totalVotes, candidates: vData.candidates || [] });
+          if (vData.active && vData.candidates) setVotingCandidates(vData.candidates);
+        }
+      } catch (e) { console.error("Loop error", e); }
     };
-
     const interval = setInterval(fetchLoop, 1000);
-    fetchLoop(); // Initial fetch
-
+    fetchLoop();
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    document.title = "DASHBOARD | StreamRace 1.0";
+    loadConfig();
+    const interval = setInterval(() => {
+      if (!savingRef.current) {
+        loadConfig();
+      }
+    }, 2000);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    if (raceFlag && raceFlag.startsWith("BLACK:")) {
+      const parts = raceFlag.split(":");
+      if (parts[1]) setBlackFlagNum(parts[1]);
+    }
+  }, [raceFlag]);
 
   async function loadConfig() {
     const apiOrigin = import.meta.env.VITE_API_URL || "";
@@ -68,44 +153,61 @@ export default function Dashboard() {
     setOverlayEnabled(data.overlayEnabled !== false);
     setScrapingEnabled(data.scrapingEnabled !== false);
     setCommentsEnabled(data.commentsEnabled !== false);
+    setVotingWidgetEnabled(data.votingWidgetEnabled !== false);
+    setOvertakesEnabled(data.overtakesEnabled !== false);
+    setCurrentLapEnabled(data.currentLapEnabled !== false);
+    setFastestLapEnabled(data.fastestLapEnabled !== false);
+    setLapFinishEnabled(data.lapFinishEnabled !== false);
+    if (data.raceFlag) setRaceFlag(data.raceFlag);
   }
-  async function saveConfig() {
+
+  async function saveConfig(updates = {}) {
     setSaving(true);
     setStatus("");
     try {
       const apiOrigin = import.meta.env.VITE_API_URL || "";
-      
-      // If we have valid test data for this URL, send it to initialize the server immediately
       const initialData = (fullData && fullData.source === url) ? fullData : null;
       
-      // Also save to LocalStorage for immediate client-side consistency (as requested)
-      if (initialData && initialData.standings && initialData.standings.length > 0) {
-          try {
-             const snap = { 
-               rows: initialData.standings, 
-               title: initialData.sessionName || "", 
-               finishFlag: !!initialData.flagFinish, 
-               sessionLaps: initialData.sessionLaps || "", 
-               announcements: initialData.announcements || [] 
-             };
-             localStorage.setItem("overlay:lastSnapshot", JSON.stringify(snap));
-          } catch (e) { console.error("LS Error:", e); }
-      }
+      const body = { 
+        speedhiveUrl: url, 
+        overlayEnabled, 
+        scrapingEnabled, 
+        commentsEnabled, 
+        votingWidgetEnabled,
+        overtakesEnabled,
+        currentLapEnabled,
+        fastestLapEnabled,
+        lapFinishEnabled,
+        initialData,
+        ...updates 
+      };
 
       const res = await fetch(`${apiOrigin}/api/config`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ speedhiveUrl: url, overlayEnabled, scrapingEnabled, commentsEnabled, initialData })
+        body: JSON.stringify(body)
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Error");
-      setStatus("Guardado");
+      
+      // Update local state based on what was saved
+      if (updates.overlayEnabled !== undefined) setOverlayEnabled(data.overlayEnabled);
+      if (updates.scrapingEnabled !== undefined) setScrapingEnabled(data.scrapingEnabled);
+      if (updates.commentsEnabled !== undefined) setCommentsEnabled(data.commentsEnabled);
+      if (updates.votingWidgetEnabled !== undefined) setVotingWidgetEnabled(data.votingWidgetEnabled);
+      if (updates.overtakesEnabled !== undefined) setOvertakesEnabled(data.overtakesEnabled);
+      if (updates.currentLapEnabled !== undefined) setCurrentLapEnabled(data.currentLapEnabled);
+      if (updates.fastestLapEnabled !== undefined) setFastestLapEnabled(data.fastestLapEnabled);
+      if (updates.lapFinishEnabled !== undefined) setLapFinishEnabled(data.lapFinishEnabled);
+      
+      setStatus("Configuración guardada");
     } catch (e) {
       setStatus(String(e.message || e));
     } finally {
       setSaving(false);
     }
   }
+
   async function probar() {
     setStatus("Probando…");
     try {
@@ -115,266 +217,389 @@ export default function Dashboard() {
       setLastUpdated(data.updatedAt || Date.now());
       setSessionName(data.sessionName || "");
       setDebug(data.debug || null);
-      const rows = Array.isArray(data.standings) ? data.standings : [];
-      setFullData(data); // Store full data for persistence
-      setPreviewRows(rows.slice(0, 12));
-      setStatus("OK");
+      setPreviewRows(Array.isArray(data.standings) ? data.standings.slice(0, 12) : []);
+      setFullData(data);
+      setStatus("OK - Datos recibidos");
     } catch (e) {
-      setStatus("Error al probar");
+      setStatus("Error al probar conexión");
     }
   }
-  async function toggleOverlay() {
+
+  async function startVoting() {
+    if (selectedCandidates.length < 2) return setStatus("Selecciona al menos 2 pilotos");
     setSaving(true);
-    setStatus("");
     try {
       const apiOrigin = import.meta.env.VITE_API_URL || "";
-      const res = await fetch(`${apiOrigin}/api/config`, {
+      await fetch(`${apiOrigin}/api/voting/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ overlayEnabled: !overlayEnabled })
+        body: JSON.stringify({ candidates: selectedCandidates })
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Error");
-      setOverlayEnabled(data.overlayEnabled !== false);
-      setStatus(data.overlayEnabled ? "Overlay activado" : "Overlay oculto");
-    } catch (e) {
-      setStatus(String(e.message || e));
-    } finally {
-      setSaving(false);
-    }
+      setVotingActive(true);
+      setVotingCandidates(selectedCandidates);
+      setStatus("Votación iniciada");
+    } catch (e) { setStatus(String(e)); } 
+    finally { setSaving(false); }
   }
 
-  async function toggleScraping() {
+  async function stopVoting() {
     setSaving(true);
-    setStatus("");
     try {
       const apiOrigin = import.meta.env.VITE_API_URL || "";
-      const res = await fetch(`${apiOrigin}/api/config`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scrapingEnabled: !scrapingEnabled })
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Error");
-      setScrapingEnabled(data.scrapingEnabled !== false);
-      setStatus(data.scrapingEnabled ? "Scraping activado" : "Scraping pausado");
-    } catch (e) {
-      setStatus(String(e.message || e));
-    } finally {
-      setSaving(false);
-    }
+      await fetch(`${apiOrigin}/api/voting/stop`, { method: "POST" });
+      setVotingActive(false);
+      setStatus("Votación finalizada");
+    } catch (e) { setStatus(String(e)); } 
+    finally { setSaving(false); }
   }
 
-  async function toggleComments() {
-    setSaving(true);
-    setStatus("");
+  function toggleCandidate(row) {
+    if (votingActive) return; 
+    setSelectedCandidates(prev => {
+      const exists = prev.find(c => c.number === row.number);
+      return exists ? prev.filter(c => c.number !== row.number) : [...prev, { number: row.number, name: row.name }];
+    });
+  }
+
+  async function updateFlag(flag) {
+    setRaceFlag(flag);
     try {
       const apiOrigin = import.meta.env.VITE_API_URL || "";
-      const res = await fetch(`${apiOrigin}/api/config`, {
+      await fetch(`${apiOrigin}/api/flag`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ commentsEnabled: !commentsEnabled })
+        body: JSON.stringify({ flag })
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Error");
-      setCommentsEnabled(data.commentsEnabled !== false);
-      setStatus(data.commentsEnabled ? "Comentarios activados" : "Comentarios ocultos");
-    } catch (e) {
-      setStatus(String(e.message || e));
-    } finally {
-      setSaving(false);
-    }
+    } catch (e) { console.error(e); }
   }
 
-  function abrirOverlay() {
-    window.open("/", "_blank");
-  }
-
-  useEffect(() => {
-    document.title = "Livetiming OBS Overlay | Dashboard";
-    loadConfig();
-  }, []);
-
-  function abrirPregrilla() {
-    window.open("/grid", "_blank");
-  }
-  function abrirResultados() {
-    window.open("/results", "_blank");
-  }
+  // --- Render ---
 
   return (
-    <div className="min-h-screen" style={{ background: "var(--bg)", color: "var(--text)" }}>
-      <div className="sticky top-0 z-10 border-b border-white/10" style={{ background: "var(--header-bg)" }}>
-        <div className="max-w-6xl mx-auto px-6 py-4 flex items-center gap-4">
-          <div className="font-extrabold tracking-tight uppercase">Dashboard</div>
-          <div className="ml-auto flex items-center gap-2">
-            <span className={`px-2.5 py-1 rounded-md text-sm font-bold bg-white/10 border border-white/10 ${overlayEnabled ? "" : "bg-[var(--accent)] text-black"}`}>{overlayEnabled ? "Overlay visible" : "Overlay oculto"}</span>
-            {sessionName && <span className="px-2.5 py-1 rounded-md text-sm font-bold bg-white/10 border border-white/10">{sessionName}</span>}
-            {updateDuration !== null && <span className="px-2.5 py-1 rounded-md text-sm font-bold bg-white/10 border border-white/10 text-yellow-400">Latencia: {updateDuration}ms</span>}
-            {lastUpdated && <span className="px-2.5 py-1 rounded-md text-sm font-bold bg-white/10 border border-white/10">{new Date(lastUpdated).toLocaleTimeString()}</span>}
+    <div className="h-screen bg-[#0a0a0a] text-gray-200 font-sans selection:bg-[var(--accent)] selection:text-black overflow-hidden flex flex-col">
+      {/* Header */}
+      <div className="shrink-0 border-b border-white/10 bg-[#0f0f0f]/95 backdrop-blur-md z-30">
+        <div className="w-full px-6 py-3 flex items-center gap-6">
+          <div className="flex items-center gap-3">
+            <div className="w-4 h-4 bg-[var(--accent)] transform -skew-x-12" />
+            <div className="font-black tracking-tighter text-xl text-white italic">STREAMRACE 1.0</div>
+          </div>
+          
+          <div className="h-6 w-px bg-white/10" />
+          
+          <div className="flex items-center gap-3">
+             {sessionName ? (
+               <div className="text-white font-bold tracking-wide uppercase">{sessionName}</div>
+             ) : (
+               <div className="text-white/30 font-mono text-sm">NO SESSION</div>
+             )}
+          </div>
+
+          <div className="ml-auto flex items-center gap-3 text-xs font-mono">
+             <button 
+                onClick={() => saveConfig({ scrapingEnabled: !scrapingEnabled })}
+                className={`px-3 py-1 rounded font-bold uppercase transition-all border ${
+                  scrapingEnabled 
+                    ? "bg-green-500/10 border-green-500/20 text-green-500 hover:bg-green-500/20" 
+                    : "bg-red-500/10 border-red-500/20 text-red-500 hover:bg-red-500/20"
+                }`}
+             >
+                {scrapingEnabled ? "SCRAPING ON" : "SCRAPING OFF"}
+             </button>
+
+             <div className={`px-2 py-1 rounded flex items-center gap-2 border ${updateDuration > 500 ? 'bg-yellow-500/10 border-yellow-500/20 text-yellow-500' : 'bg-green-500/10 border-green-500/20 text-green-500'}`}>
+                <div className={`w-1.5 h-1.5 rounded-full ${updateDuration > 500 ? 'bg-yellow-500' : 'bg-green-500'}`} />
+                LATENCY: {updateDuration || 0}ms
+             </div>
+             {lastUpdated && <div className="text-white/40">{new Date(lastUpdated).toLocaleTimeString()}</div>}
           </div>
         </div>
       </div>
-      <div className="max-w-6xl mx-auto px-6 py-6">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="rounded-xl border border-white/10 shadow-[0_8px_28px_rgba(0,0,0,0.35)] overflow-hidden" style={{ background: "var(--panel)" }}>
-            <div className="px-4 py-3 font-bold border-b border-white/10 flex items-center gap-3" style={{ background: "var(--header-bg)" }}>
-              <div className="w-3 h-3 rounded-full" style={{ background: "var(--accent)" }} />
-              <div>Configuración de fuente de datos</div>
-            </div>
+
+      <div className="flex-1 p-4 grid grid-cols-12 gap-4 min-h-0">
+        
+        {/* Left Column: Config (3 cols) */}
+        <div className="col-span-12 xl:col-span-3 flex flex-col gap-4 overflow-y-auto pr-1 custom-scrollbar">
+          
+          {/* Connection Card */}
+          <div className="bg-[#141414] rounded-xl border border-white/5 overflow-hidden shadow-2xl shrink-0">
+            <SectionHeader title="Fuente de Datos" icon="📡" />
             <div className="p-4 space-y-4">
               <Input
-                label="URL de Speedhive (Live Timing)"
+                label="Speedhive URL"
                 value={url}
                 onChange={setUrl}
-                placeholder="https://speedhive.mylaps.com/livetiming/XXXX/active"
+                placeholder="https://speedhive.mylaps.com/..."
               />
-              <div className="flex items-center gap-3">
-                <button onClick={saveConfig} disabled={saving} className="inline-flex items-center justify-center rounded-md text-sm font-medium bg-[var(--accent)] text-black hover:brightness-95 px-3 py-2 disabled:opacity-60 disabled:pointer-events-none">
-                  Guardar
-                </button>
-                <button onClick={probar} className="inline-flex items-center justify-center rounded-md text-sm font-medium bg-white/10 hover:bg-white/15 border border-white/10 px-3 py-2">
-                  Probar
-                </button>
-                <button onClick={abrirOverlay} className="ml-auto inline-flex items-center justify-center rounded-md text-sm font-medium bg-white/10 hover:bg-white/15 border border-white/10 px-3 py-2">
-                  Abrir overlay
+              <div className="grid grid-cols-2 gap-3">
+                 <ActionButton onClick={() => saveConfig()} disabled={saving} label="Guardar" type="normal" />
+                 <ActionButton onClick={probar} label="Test Conn" type="link" />
+              </div>
+              {status && <div className="text-xs text-center font-mono opacity-50 pt-2 border-t border-white/5">{status}</div>}
+            </div>
+          </div>
+
+          {/* Visibility Controls */}
+          <div className="bg-[#141414] rounded-xl border border-white/5 overflow-hidden shadow-2xl shrink-0">
+            <SectionHeader title="Transmisión" icon="📺" />
+            <div className="p-4 space-y-2">
+              <div className="flex items-center justify-between p-2.5 rounded bg-white/5 border border-white/5">
+                <div className="font-bold text-xs uppercase">Overlay Principal</div>
+                <button onClick={() => saveConfig({ overlayEnabled: !overlayEnabled })} className={`w-10 h-5 rounded-full transition-colors relative ${overlayEnabled ? "bg-green-500" : "bg-white/10"}`}>
+                   <div className={`absolute top-1 left-1 w-3 h-3 bg-white rounded-full transition-transform ${overlayEnabled ? "translate-x-5" : ""}`} />
                 </button>
               </div>
-              <div className="text-sm opacity-80 flex items-center gap-4">
-                {status && <span>Estado: {status}</span>}
-                {sessionName && <span>Sesión: {sessionName}</span>}
+              
+              <div className="flex items-center justify-between p-2.5 rounded bg-white/5 border border-white/5">
+                <div className="font-bold text-xs uppercase">Comentarios AI</div>
+                <button onClick={() => saveConfig({ commentsEnabled: !commentsEnabled })} className={`w-10 h-5 rounded-full transition-colors relative ${commentsEnabled ? "bg-green-500" : "bg-white/10"}`}>
+                    <div className={`absolute top-1 left-1 w-3 h-3 bg-white rounded-full transition-transform ${commentsEnabled ? "translate-x-5" : ""}`} />
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between p-2.5 rounded bg-white/5 border border-white/5">
+                <div className="font-bold text-xs uppercase">Widget Votación</div>
+                <button onClick={() => saveConfig({ votingWidgetEnabled: !votingWidgetEnabled })} className={`w-10 h-5 rounded-full transition-colors relative ${votingWidgetEnabled ? "bg-green-500" : "bg-white/10"}`}>
+                    <div className={`absolute top-1 left-1 w-3 h-3 bg-white rounded-full transition-transform ${votingWidgetEnabled ? "translate-x-5" : ""}`} />
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between p-2.5 rounded bg-white/5 border border-white/5">
+                <div className="font-bold text-xs uppercase">Vueltas</div>
+                <button onClick={() => saveConfig({ currentLapEnabled: !currentLapEnabled })} className={`w-10 h-5 rounded-full transition-colors relative ${currentLapEnabled ? "bg-green-500" : "bg-white/10"}`}>
+                    <div className={`absolute top-1 left-1 w-3 h-3 bg-white rounded-full transition-transform ${currentLapEnabled ? "translate-x-5" : ""}`} />
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between p-2.5 rounded bg-white/5 border border-white/5">
+                <div className="font-bold text-xs uppercase">Adelantamientos</div>
+                <button onClick={() => saveConfig({ overtakesEnabled: !overtakesEnabled })} className={`w-10 h-5 rounded-full transition-colors relative ${overtakesEnabled ? "bg-green-500" : "bg-white/10"}`}>
+                    <div className={`absolute top-1 left-1 w-3 h-3 bg-white rounded-full transition-transform ${overtakesEnabled ? "translate-x-5" : ""}`} />
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between p-2.5 rounded bg-white/5 border border-white/5">
+                <div className="font-bold text-xs uppercase">Récord de Vuelta</div>
+                <button onClick={() => saveConfig({ fastestLapEnabled: !fastestLapEnabled })} className={`w-10 h-5 rounded-full transition-colors relative ${fastestLapEnabled ? "bg-green-500" : "bg-white/10"}`}>
+                    <div className={`absolute top-1 left-1 w-3 h-3 bg-white rounded-full transition-transform ${fastestLapEnabled ? "translate-x-5" : ""}`} />
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between p-2.5 rounded bg-white/5 border border-white/5">
+                <div className="font-bold text-xs uppercase">Final de Vuelta</div>
+                <button onClick={() => saveConfig({ lapFinishEnabled: !lapFinishEnabled })} className={`w-10 h-5 rounded-full transition-colors relative ${lapFinishEnabled ? "bg-green-500" : "bg-white/10"}`}>
+                    <div className={`absolute top-1 left-1 w-3 h-3 bg-white rounded-full transition-transform ${lapFinishEnabled ? "translate-x-5" : ""}`} />
+                </button>
+              </div>
+
+              <div className="pt-2 border-t border-white/5 grid grid-cols-3 gap-2">
+                 <button onClick={() => window.open("/", "_blank")} className="px-2 py-2 text-[10px] font-bold uppercase bg-white/5 hover:bg-white/10 rounded border border-white/5 text-center">Overlay</button>
+                 <button onClick={() => window.open("/grid", "_blank")} className="px-2 py-2 text-[10px] font-bold uppercase bg-white/5 hover:bg-white/10 rounded border border-white/5 text-center">Grid</button>
+                 <button onClick={() => window.open("/results", "_blank")} className="px-2 py-2 text-[10px] font-bold uppercase bg-white/5 hover:bg-white/10 rounded border border-white/5 text-center">Results</button>
               </div>
             </div>
           </div>
 
-          <div className="rounded-xl border border-white/10 shadow-[0_8px_28px_rgba(0,0,0,0.35)] overflow-hidden" style={{ background: "var(--panel)" }}>
-            <div className="px-4 py-3 font-bold border-b border-white/10 flex items-center gap-3" style={{ background: "var(--header-bg)" }}>
-              <div className="w-3 h-3 rounded-full" style={{ background: "var(--accent)" }} />
-              <div>Pregrilla y Resultados</div>
-            </div>
-            <div className="p-4">
-              <button onClick={abrirPregrilla} className="px-4 py-3 font-extrabold inline-flex items-center justify-center rounded-md text-sm bg-white/10 hover:bg-white/15 border border-white/10">
-                Abrir pregrilla
-              </button>
-              <button onClick={abrirResultados} className="ml-2 px-4 py-3 font-extrabold inline-flex items-center justify-center rounded-md text-sm bg-white/10 hover:bg-white/15 border border-white/10">
-                Abrir resultados
-              </button>
+
+
+        </div>
+
+        {/* Center Column: Race Control (4 cols) */}
+        <div className="col-span-12 xl:col-span-4 flex flex-col gap-4 overflow-y-auto pr-1 custom-scrollbar">
+          
+          {/* Race Flags */}
+          <div className="bg-[#141414] rounded-xl border border-white/5 overflow-hidden shadow-2xl shrink-0">
+            <SectionHeader title="Banderas" icon="🚩" />
+            <div className="p-4 grid grid-cols-2 gap-2">
+               <button onClick={() => updateFlag("GREEN")} className={`p-4 rounded font-black text-sm uppercase border transition-all ${raceFlag === "GREEN" ? "bg-green-500 text-black border-transparent shadow-[0_0_15px_rgba(34,197,94,0.4)]" : "bg-green-500/10 text-green-500 border-green-500/20 hover:bg-green-500/20"}`}>
+                  VERDE
+               </button>
+               <button onClick={() => updateFlag("YELLOW")} className={`p-4 rounded font-black text-sm uppercase border transition-all ${raceFlag === "YELLOW" ? "bg-yellow-500 text-black border-transparent shadow-[0_0_15px_rgba(234,179,8,0.4)] animate-pulse" : "bg-yellow-500/10 text-yellow-500 border-yellow-500/20 hover:bg-yellow-500/20"}`}>
+                  AMARILLA
+               </button>
+               <button onClick={() => updateFlag("SC")} className={`p-4 rounded font-black text-sm uppercase border transition-all ${raceFlag === "SC" ? "bg-orange-500 text-black border-transparent shadow-[0_0_15px_rgba(249,115,22,0.4)] animate-pulse" : "bg-orange-500/10 text-orange-500 border-orange-500/20 hover:bg-orange-500/20"}`}>
+                  SAFETY CAR
+               </button>
+               <button onClick={() => updateFlag("SLOW")} className={`p-4 rounded font-black text-sm uppercase border transition-all ${raceFlag === "SLOW" ? "bg-orange-500 text-black border-transparent shadow-[0_0_15px_rgba(249,115,22,0.4)] animate-pulse" : "bg-orange-500/10 text-orange-500 border-orange-500/20 hover:bg-orange-500/20"}`}>
+                  SLOW
+               </button>
+               <button onClick={() => updateFlag("BLUE")} className={`p-4 rounded font-black text-sm uppercase border transition-all ${raceFlag === "BLUE" ? "bg-blue-600 text-white border-transparent shadow-[0_0_15px_rgba(37,99,235,0.4)] animate-pulse" : "bg-blue-500/10 text-blue-500 border-blue-500/20 hover:bg-blue-500/20"}`}>
+                  AZUL
+               </button>
+               <button onClick={() => updateFlag("RED")} className={`p-4 rounded font-black text-sm uppercase border transition-all ${raceFlag === "RED" ? "bg-red-600 text-white border-transparent shadow-[0_0_15px_rgba(220,38,38,0.4)] animate-pulse" : "bg-red-500/10 text-red-500 border-red-500/20 hover:bg-red-500/20"}`}>
+                  ROJA
+               </button>
+               <button onClick={() => updateFlag("FINISH")} className={`col-span-2 p-4 rounded font-black text-sm uppercase border transition-all ${raceFlag === "FINISH" ? "bg-white text-black border-transparent shadow-[0_0_15px_rgba(255,255,255,0.4)]" : "bg-white/10 text-white border-white/20 hover:bg-white/20"}`}>
+                  FINAL (AJEDREZ)
+               </button>
+
+               <div className="col-span-2 flex gap-2 pt-2 border-t border-white/5 mt-2">
+                 <input 
+                    value={blackFlagNum}
+                    onChange={(e) => setBlackFlagNum(e.target.value)}
+                    placeholder="#"
+                    className="w-20 bg-black/40 border border-white/20 rounded text-center font-mono font-bold text-white focus:border-[var(--accent)] outline-none"
+                 />
+                 <button 
+                    onClick={() => {
+                      const target = blackFlagNum ? `BLACK:${blackFlagNum}` : "BLACK";
+                      updateFlag(raceFlag === target ? "GREEN" : target);
+                    }} 
+                    className={`flex-1 p-3 rounded font-black text-sm uppercase border transition-all ${raceFlag && raceFlag.startsWith("BLACK") ? "bg-black text-white border-white/50 shadow-[0_0_15px_rgba(255,255,255,0.4)] animate-pulse" : "bg-black/40 text-gray-400 border-white/10 hover:bg-black/60"}`}
+                 >
+                    BANDERA NEGRA
+                 </button>
+               </div>
             </div>
           </div>
 
-          <div className="rounded-xl border border-white/10 shadow-[0_8px_28px_rgba(0,0,0,0.35)] overflow-hidden" style={{ background: "var(--panel)" }}>
-            <div className="px-4 py-3 font-bold border-b border-white/10 flex items-center gap-3" style={{ background: "var(--header-bg)" }}>
-              <div className="w-3 h-3 rounded-full" style={{ background: "var(--accent)" }} />
-              <div>Control de visualización</div>
-            </div>
-            <div className="p-4 flex flex-col gap-4">
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={toggleOverlay}
-                  disabled={saving}
-                  className={`px-4 py-3 font-extrabold inline-flex items-center justify-center rounded-md text-sm transition-colors border border-white/10 ${overlayEnabled ? "bg-white/10 hover:bg-white/15" : "bg-[var(--accent)] text-black"} disabled:opacity-60 disabled:pointer-events-none`}
-                >
-                  {overlayEnabled ? "Ocultar tabla" : "Mostrar tabla"}
-                </button>
-                <span className="text-sm opacity-80">{overlayEnabled ? "Tabla visible" : "Tabla oculta"}</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={toggleComments}
-                  disabled={saving}
-                  className={`px-4 py-3 font-extrabold inline-flex items-center justify-center rounded-md text-sm transition-colors border border-white/10 ${commentsEnabled ? "bg-white/10 hover:bg-white/15" : "bg-[var(--accent)] text-black"} disabled:opacity-60 disabled:pointer-events-none`}
-                >
-                  {commentsEnabled ? "Ocultar comentarios" : "Mostrar comentarios"}
-                </button>
-                <span className="text-sm opacity-80">{commentsEnabled ? "Comentarios visibles" : "Comentarios ocultos"}</span>
-              </div>
-            </div>
-          </div>
+          {/* Voting Manager */}
+          <div className="bg-[#141414] rounded-xl border border-white/5 overflow-hidden shadow-2xl flex flex-col shrink-0">
+             <div className="bg-white/[0.02] flex flex-col">
+                <SectionHeader title="Piloto Destacado" icon="🗳️" />
+                <div className="p-6 flex-1 flex flex-col">
+                  {!votingActive ? (
+                    <div className="flex flex-col gap-6">
+                       <div className="text-center">
+                         <div className="text-white/60 text-xs max-w-xs mx-auto">
+                           Selecciona pilotos en la tabla de la derecha.
+                         </div>
+                       </div>
+                       
+                       <div className="flex items-center justify-center py-2">
+                         {selectedCandidates.length > 0 ? (
+                           <div className="flex flex-wrap gap-2 justify-center content-center">
+                              {selectedCandidates.map(c => (
+                                <span key={c.number} onClick={() => toggleCandidate(c)} className="cursor-pointer group relative px-3 py-1.5 bg-white/10 rounded-md border border-white/10 hover:bg-red-500/20 hover:border-red-500/30 transition-all">
+                                   <span className="font-bold text-[var(--accent)] mr-2">#{c.number}</span>
+                                   <span className="font-medium text-sm">{c.name}</span>
+                                   <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full text-[10px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">✕</span>
+                                </span>
+                              ))}
+                           </div>
+                         ) : (
+                           <div className="w-full p-4 border-2 border-dashed border-white/10 rounded-xl text-white/20 text-sm italic text-center flex flex-col items-center gap-2">
+                             <span>Ningún piloto seleccionado</span>
+                           </div>
+                         )}
+                       </div>
 
-          <div className="rounded-xl border border-white/10 shadow-[0_8px_28px_rgba(0,0,0,0.35)] overflow-hidden" style={{ background: "var(--panel)" }}>
-            <div className="px-4 py-3 font-bold border-b border-white/10 flex items-center gap-3" style={{ background: "var(--header-bg)" }}>
-              <div className="w-3 h-3 rounded-full" style={{ background: scrapingEnabled ? "#22c55e" : "#ef4444" }} />
-              <div>Estado del Servicio</div>
-            </div>
-            <div className="p-4">
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={toggleScraping}
-                  disabled={saving}
-                  className={`px-4 py-3 font-extrabold inline-flex items-center justify-center rounded-md text-sm transition-colors border border-white/10 ${scrapingEnabled ? "bg-red-500/20 text-red-200 hover:bg-red-500/30" : "bg-green-500/20 text-green-200 hover:bg-green-500/30"} disabled:opacity-60 disabled:pointer-events-none`}
-                >
-                  {scrapingEnabled ? "PAUSAR SCRAPING" : "REANUDAR SCRAPING"}
-                </button>
-                <span className="text-sm opacity-80">{scrapingEnabled ? "Servicio activo" : "Servicio pausado"}</span>
-              </div>
-            </div>
-          </div>
+                       <div className="mt-auto">
+                          <button 
+                            onClick={startVoting} 
+                            disabled={selectedCandidates.length < 2} 
+                            className="w-full py-3 font-black uppercase italic tracking-wider rounded text-sm transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed bg-green-500 text-black hover:bg-green-400 shadow-[0_0_20px_rgba(34,197,94,0.3)] hover:shadow-[0_0_30px_rgba(34,197,94,0.5)] transform hover:-translate-y-1"
+                          >
+                            INICIAR VOTACIÓN
+                          </button>
+                       </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-6">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="relative flex h-3 w-3">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+                          </span>
+                          <span className="font-bold text-green-400 tracking-wide uppercase text-xs">En curso</span>
+                        </div>
+                        <div className="text-xl font-black tabular-nums">{voteStats.totalVotes} <span className="text-xs font-medium opacity-50">votos</span></div>
+                      </div>
 
-          <div className="rounded-xl border border-white/10 shadow-[0_8px_28px_rgba(0,0,0,0.35)] overflow-hidden lg:col-span-2" style={{ background: "var(--panel)" }}>
-            <div className="px-4 py-3 font-bold border-b border-white/10 flex items-center gap-3" style={{ background: "var(--header-bg)" }}>
-              <div className="w-3 h-3 rounded-full" style={{ background: "var(--accent)" }} />
-              <div>Debug de scraping</div>
-            </div>
-            <div className="p-4 space-y-3">
-              <div className="flex items-center gap-4 text-sm">
-                <div className="font-bold">Método:</div>
-                <span className="px-2.5 py-1 rounded-md text-sm font-bold bg-black/30 border border-white/10">{debug?.sourceMethod || "-"}</span>
-                <div className="font-bold ml-4">Headers:</div>
-                <div className="flex flex-wrap gap-1">
-                  {(debug?.headers || []).map((h, i) => (
-                    <span key={i} className="px-2.5 py-1 rounded-md text-xs font-bold bg-black/30 border border-white/10">
-                      {h}
-                    </span>
-                  ))}
-                  {!debug?.headers?.length && <span className="opacity-70">-</span>}
+                      <div className="space-y-2">
+                        {voteStats.candidates.sort((a,b) => b.votes - a.votes).map(c => (
+                          <div key={c.number} className="relative group">
+                            <div className="flex justify-between text-xs font-bold mb-1 z-10 relative">
+                              <span className="flex items-center gap-2">
+                                <span className="text-[var(--accent)]">#{c.number}</span>
+                                {c.name}
+                              </span>
+                              <span>{c.percent}%</span>
+                            </div>
+                            <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
+                              <div className="h-full bg-[var(--accent)] transition-all duration-500 ease-out" style={{ width: `${c.percent}%` }} />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="pt-2">
+                        <ActionButton 
+                          onClick={stopVoting} 
+                          label="FINALIZAR VOTACIÓN" 
+                          type="danger" 
+                          active={true}
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
-              </div>
-              <div className="relative rounded-lg border border-white/10">
-                <table className="min-w-full table-fixed border-collapse">
-                  <thead>
-                    <tr className="bg-black/30">
-                      <th className="px-2 py-2 text-left w-[60px]">Pos</th>
-                      <th className="px-2 py-2 text-left w-[60px]">#</th>
-                      <th className="px-2 py-2 text-left">Competitor</th>
-                      <th className="px-2 py-2 text-left w-[80px]">Laps</th>
-                      <th className="px-2 py-2 text-left w-[100px]">Last</th>
-                      <th className="px-2 py-2 text-left w-[100px]">Diff</th>
-                      <th className="px-2 py-2 text-left w-[100px]">Gap</th>
-                      <th className="px-2 py-2 text-left w-[120px]">Total</th>
-                      <th className="px-2 py-2 text-left w-[100px]">Best</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {previewRows.map((r, i) => {
-                      const miss = (v) => !v || String(v).trim() === "";
-                      return (
-                        <tr key={`row-${i}`}>
-                          <td className={`px-2 py-1.5 border-b border-white/10 ${miss(r.position) ? "bg-red-500/15" : ""}`}>{r.position ?? ""}</td>
-                          <td className={`px-2 py-1.5 border-b border-white/10 ${miss(r.number) ? "bg-red-500/15" : ""}`}>{r.number ?? ""}</td>
-                          <td className={`px-2 py-1.5 border-b border-white/10 ${miss(r.name) ? "bg-red-500/15" : ""}`}>{r.name ?? ""}</td>
-                          <td className={`px-2 py-1.5 border-b border-white/10 ${miss(r.laps) ? "bg-red-500/15" : ""}`}>{r.laps ?? ""}</td>
-                          <td className={`px-2 py-1.5 border-b border-white/10 ${miss(r.lastLap) ? "bg-red-500/15" : ""}`}>{r.lastLap ?? ""}</td>
-                          <td className={`px-2 py-1.5 border-b border-white/10 ${miss(r.diff) ? "bg-red-500/15" : ""}`}>{r.diff ?? ""}</td>
-                          <td className={`px-2 py-1.5 border-b border-white/10 ${miss(r.gap) ? "bg-red-500/15" : ""}`}>{r.gap ?? ""}</td>
-                          <td className={`px-2 py-1.5 border-b border-white/10 ${miss(r.totalTime) ? "bg-red-500/15" : ""}`}>{r.totalTime ?? ""}</td>
-                          <td className={`px-2 py-1.5 border-b border-white/10 ${miss(r.bestLap) ? "bg-red-500/15" : ""}`}>{r.bestLap ?? ""}</td>
-                        </tr>
-                      );
-                    })}
-                    {!previewRows.length && (
-                      <tr>
-                        <td colSpan={9} className="px-2 py-3 text-center opacity-70">
-                          Sin datos
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+             </div>
+             
+             {votingActive && (
+               <div className="w-full bg-white/5 p-4 flex flex-col items-center justify-center gap-4 text-center border-t border-white/5">
+                  <div className="p-2 bg-white rounded-xl shadow-2xl">
+                    <QRCodeSVG value={`${window.location.protocol}//${window.location.hostname}:${window.location.port}/vote`} size={120} />
+                  </div>
+                  <div className="space-y-1">
+                    <a href="/vote" target="_blank" className="text-blue-400 hover:text-blue-300 text-xs underline decoration-blue-500/30 underline-offset-4">
+                      /vote page
+                    </a>
+                  </div>
+               </div>
+             )}
           </div>
         </div>
+
+        {/* Right Column: Data Table (5 cols) */}
+        <div className="col-span-12 xl:col-span-5 flex flex-col bg-[#141414] rounded-xl border border-white/5 overflow-hidden shadow-2xl min-h-0">
+          <SectionHeader title="Selección de Candidatos" icon="📋" />
+          <div className="flex-1 overflow-auto custom-scrollbar">
+            <table className="w-full text-left border-collapse">
+              <thead className="sticky top-0 bg-[#1a1a1a] z-10 shadow-lg">
+                <tr className="text-xs font-bold uppercase tracking-wider text-white/50">
+                  <th className="p-3 w-10 text-center">Sel</th>
+                  <th className="p-3">Pos</th>
+                  <th className="p-3">#</th>
+                  <th className="p-3">Piloto</th>
+                  <th className="p-3 text-right">M. Vuelta</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {previewRows.map((r, i) => {
+                   const isSelected = selectedCandidates.some(c => c.number === r.number);
+                   return (
+                     <tr 
+                       key={i} 
+                       onClick={() => toggleCandidate(r)} 
+                       className={`group cursor-pointer transition-colors hover:bg-white/5 ${isSelected ? "bg-green-500/10" : ""}`}
+                     >
+                       <td className="p-3 text-center">
+                         <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${isSelected ? "bg-green-500 border-green-500 text-black" : "border-white/20 group-hover:border-white/40"}`}>
+                           {isSelected && <span className="text-[10px]">✓</span>}
+                         </div>
+                       </td>
+                       <td className="p-3 font-mono font-bold text-sm">{r.position}</td>
+                       <td className="p-3 font-mono text-[var(--accent)] font-bold text-sm">#{r.number}</td>
+                       <td className="p-3 font-bold text-sm">{r.name}</td>
+                       <td className="p-3 font-mono text-right text-sm">{r.bestLap}</td>
+                     </tr>
+                   );
+                })}
+                {previewRows.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="p-12 text-center text-white/20 italic">
+                      Esperando datos...
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
       </div>
-  </div>
+    </div>
   );
 }

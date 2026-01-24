@@ -1,0 +1,11 @@
+{
+  "speedhiveUrl": "https://speedhive.mylaps.com/livetiming/A2AB975A5BB35CC7-2147486262/active",
+  "overlayEnabled": true,
+  "scrapingEnabled": true,
+  "commentsEnabled": true,
+  "votingWidgetEnabled": true,
+  "overtakesEnabled": true,
+  "currentLapEnabled": true,
+  "fastestLapEnabled": true,
+  "lapFinishEnabled": true
+}

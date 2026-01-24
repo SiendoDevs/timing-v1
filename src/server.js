@@ -3,11 +3,21 @@ import cors from "cors";
 import puppeteer from "puppeteer";
 import path from "node:path";
 import fs from "node:fs";
+import { createClient } from "redis";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 let speedhiveUrl = process.env.SPEEDHIVE_URL || "";
 let overlayEnabled = true;
 let scrapingEnabled = true;
 let commentsEnabled = true;
+let votingWidgetEnabled = true;
+let overtakesEnabled = true;
+let currentLapEnabled = true;
+let fastestLapEnabled = true;
+let lapFinishEnabled = true;
+let raceFlag = "GREEN"; // Default flag
 const CONFIG_FILE = path.resolve("config.json");
 
 // Load config on startup
@@ -19,7 +29,13 @@ try {
     if (typeof conf.overlayEnabled === 'boolean') overlayEnabled = conf.overlayEnabled;
     if (typeof conf.scrapingEnabled === 'boolean') scrapingEnabled = conf.scrapingEnabled;
     if (typeof conf.commentsEnabled === 'boolean') commentsEnabled = conf.commentsEnabled;
-    console.log("Loaded config:", { speedhiveUrl, overlayEnabled, scrapingEnabled, commentsEnabled });
+    if (typeof conf.votingWidgetEnabled === 'boolean') votingWidgetEnabled = conf.votingWidgetEnabled;
+    if (typeof conf.overtakesEnabled === 'boolean') overtakesEnabled = conf.overtakesEnabled;
+    if (typeof conf.currentLapEnabled === 'boolean') currentLapEnabled = conf.currentLapEnabled;
+    if (typeof conf.fastestLapEnabled === 'boolean') fastestLapEnabled = conf.fastestLapEnabled;
+    if (typeof conf.lapFinishEnabled === 'boolean') lapFinishEnabled = conf.lapFinishEnabled;
+    if (conf.raceFlag) raceFlag = conf.raceFlag;
+    console.log("Loaded config:", { speedhiveUrl, overlayEnabled, scrapingEnabled, commentsEnabled, votingWidgetEnabled, overtakesEnabled, currentLapEnabled, fastestLapEnabled, lapFinishEnabled, raceFlag });
   }
 } catch (e) {
   console.error("Error loading config:", e);
@@ -28,7 +44,7 @@ try {
 const PORT = process.env.PORT || 3000;
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
 app.use(cors());
 app.use("/api", (req, res, next) => {
   res.header("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
@@ -538,7 +554,7 @@ app.get("/api/standings", async (req, res) => {
   
   // Normal high-performance path
   if (!debug && !testUrl) {
-      res.json(lastData);
+      res.json({ ...lastData, raceFlag });
       return;
   }
 
@@ -554,6 +570,7 @@ app.get("/api/standings", async (req, res) => {
           sessionName: result.sessionName,
           sessionLaps: result.sessionLaps,
           flagFinish: result.flagFinish,
+          raceFlag,
           standings: result.rows,
           announcements: result.announcements,
           debug: result.debug
@@ -563,13 +580,31 @@ app.get("/api/standings", async (req, res) => {
   }
 });
 
+app.post("/api/flag", (req, res) => {
+  try {
+    const { flag } = req.body;
+    if (flag) {
+      raceFlag = flag;
+      try {
+        const currentConfig = fs.existsSync(CONFIG_FILE) ? JSON.parse(fs.readFileSync(CONFIG_FILE, "utf-8")) : {};
+        fs.writeFileSync(CONFIG_FILE, JSON.stringify({ ...currentConfig, raceFlag }, null, 2));
+      } catch (e) {
+        console.error("Error saving flag config:", e);
+      }
+    }
+    res.json({ ok: true, raceFlag });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
 app.get("/api/config", (_req, res) => {
-  res.json({ speedhiveUrl, overlayEnabled, scrapingEnabled, commentsEnabled });
+  res.json({ speedhiveUrl, overlayEnabled, scrapingEnabled, commentsEnabled, votingWidgetEnabled, overtakesEnabled, currentLapEnabled, fastestLapEnabled, lapFinishEnabled, raceFlag });
 });
 
 app.post("/api/config", async (req, res) => {
   try {
-    const { speedhiveUrl: nextUrl, overlayEnabled: nextOverlayEnabled, scrapingEnabled: nextScrapingEnabled, commentsEnabled: nextCommentsEnabled, initialData } = req.body || {};
+    const { speedhiveUrl: nextUrl, overlayEnabled: nextOverlayEnabled, scrapingEnabled: nextScrapingEnabled, commentsEnabled: nextCommentsEnabled, votingWidgetEnabled: nextVotingWidgetEnabled, overtakesEnabled: nextOvertakesEnabled, currentLapEnabled: nextCurrentLapEnabled, fastestLapEnabled: nextFastestLapEnabled, lapFinishEnabled: nextLapFinishEnabled, initialData } = req.body || {};
     
     if (typeof nextUrl === "string" && /^https?:\/\//i.test(nextUrl)) {
       if (nextUrl !== speedhiveUrl) {
@@ -593,11 +628,166 @@ app.post("/api/config", async (req, res) => {
     if (typeof nextOverlayEnabled === "boolean") overlayEnabled = nextOverlayEnabled;
     if (typeof nextScrapingEnabled === "boolean") scrapingEnabled = nextScrapingEnabled;
     if (typeof nextCommentsEnabled === "boolean") commentsEnabled = nextCommentsEnabled;
+    if (typeof nextVotingWidgetEnabled === "boolean") votingWidgetEnabled = nextVotingWidgetEnabled;
+    if (typeof nextOvertakesEnabled === "boolean") overtakesEnabled = nextOvertakesEnabled;
+    if (typeof nextCurrentLapEnabled === "boolean") currentLapEnabled = nextCurrentLapEnabled;
+    if (typeof nextFastestLapEnabled === "boolean") fastestLapEnabled = nextFastestLapEnabled;
+    if (typeof nextLapFinishEnabled === "boolean") lapFinishEnabled = nextLapFinishEnabled;
     
-    res.json({ ok: true, speedhiveUrl, overlayEnabled, scrapingEnabled, commentsEnabled });
+    try {
+      fs.writeFileSync(CONFIG_FILE, JSON.stringify({ speedhiveUrl, overlayEnabled, scrapingEnabled, commentsEnabled, votingWidgetEnabled, overtakesEnabled, currentLapEnabled, fastestLapEnabled, lapFinishEnabled }, null, 2));
+    } catch (e) {
+      console.error("Error saving config:", e);
+    }
+    
+    res.json({ ok: true, speedhiveUrl, overlayEnabled, scrapingEnabled, commentsEnabled, votingWidgetEnabled, overtakesEnabled, currentLapEnabled, fastestLapEnabled, lapFinishEnabled });
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }
+});
+
+// --- VOTING SYSTEM (Redis / In-Memory) ---
+let redisClient = null;
+let useRedis = false;
+let memoryVoting = {
+  candidates: [],
+  votes: {},
+  active: false
+};
+
+// Initialize Redis if URL provided
+(async () => {
+  if (process.env.REDIS_URL) {
+    try {
+      redisClient = createClient({ url: process.env.REDIS_URL });
+      redisClient.on('error', (err) => console.error('Redis Client Error', err));
+      await redisClient.connect();
+      useRedis = true;
+      console.log("Connected to Redis for voting system");
+    } catch (e) {
+      console.error("Failed to connect to Redis, using in-memory voting:", e);
+    }
+  } else {
+    console.log("No REDIS_URL found, using in-memory voting system");
+  }
+})();
+
+// Helper to get voting status
+async function getVotingStatus() {
+  if (useRedis) {
+    const active = await redisClient.get('timing_voting:active') === 'true';
+    const candidatesStr = await redisClient.get('timing_voting:candidates');
+    const candidates = candidatesStr ? JSON.parse(candidatesStr) : [];
+    
+    // Get votes for each candidate
+    const resultCandidates = [];
+    let totalVotes = 0;
+    
+    for (const c of candidates) {
+      const votes = parseInt(await redisClient.get(`timing_voting:count:${c.number}`) || '0', 10);
+      totalVotes += votes;
+      resultCandidates.push({ ...c, votes });
+    }
+    
+    // Calculate percentages
+    resultCandidates.forEach(c => {
+      c.percent = totalVotes > 0 ? ((c.votes / totalVotes) * 100).toFixed(1) : 0;
+    });
+    
+    return { active, candidates: resultCandidates, totalVotes };
+  } else {
+    // Memory implementation
+    const totalVotes = Object.values(memoryVoting.votes).reduce((a, b) => a + b, 0);
+    const resultCandidates = memoryVoting.candidates.map(c => {
+      const votes = memoryVoting.votes[c.number] || 0;
+      return {
+        ...c,
+        votes,
+        percent: totalVotes > 0 ? ((votes / totalVotes) * 100).toFixed(1) : 0
+      };
+    });
+    return { active: memoryVoting.active, candidates: resultCandidates, totalVotes };
+  }
+}
+
+app.get("/api/voting/status", async (req, res) => {
+  try {
+    const status = await getVotingStatus();
+    res.json(status);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+app.post("/api/voting/start", async (req, res) => {
+  try {
+    const { candidates } = req.body;
+    if (!Array.isArray(candidates) || candidates.length === 0) {
+      return res.status(400).json({ error: "Invalid candidates list" });
+    }
+
+    if (useRedis) {
+      // Clear previous voting data - ONLY for this app namespace
+      const keys = await redisClient.keys('timing_voting:*');
+      if (keys.length > 0) await redisClient.del(keys);
+      
+      await redisClient.set('timing_voting:candidates', JSON.stringify(candidates));
+      await redisClient.set('timing_voting:active', 'true');
+    } else {
+      memoryVoting.candidates = candidates;
+      memoryVoting.votes = {};
+      memoryVoting.active = true;
+    }
+    
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+app.post("/api/voting/stop", async (req, res) => {
+  try {
+    if (useRedis) {
+      await redisClient.set('timing_voting:active', 'false');
+    } else {
+      memoryVoting.active = false;
+    }
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+app.post("/api/voting/vote", async (req, res) => {
+  try {
+    const { candidateNumber } = req.body;
+    if (!candidateNumber) return res.status(400).json({ error: "Missing candidateNumber" });
+
+    // Check if voting is active
+    let active = false;
+    if (useRedis) {
+      active = await redisClient.get('timing_voting:active') === 'true';
+    } else {
+      active = memoryVoting.active;
+    }
+
+    if (!active) return res.status(403).json({ error: "Voting is closed" });
+
+    if (useRedis) {
+      await redisClient.incr(`timing_voting:count:${candidateNumber}`);
+    } else {
+      if (!memoryVoting.votes[candidateNumber]) memoryVoting.votes[candidateNumber] = 0;
+      memoryVoting.votes[candidateNumber]++;
+    }
+
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+app.get("/vote", (_req, res) => {
+  res.sendFile(path.resolve("dist/index.html"));
 });
 
 app.get("/dashboard", (_req, res) => {
