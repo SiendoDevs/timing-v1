@@ -7,5 +7,6 @@
   "overtakesEnabled": false,
   "currentLapEnabled": true,
   "fastestLapEnabled": false,
-  "lapFinishEnabled": true
+  "lapFinishEnabled": true,
+  "raceFlag": "GREEN"
 }

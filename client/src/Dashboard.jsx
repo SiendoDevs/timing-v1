@@ -427,7 +427,10 @@ export default function Dashboard() {
                <button onClick={() => updateFlag("BLUE")} className={`p-4 rounded font-black text-sm uppercase border transition-all ${raceFlag === "BLUE" ? "bg-blue-600 text-white border-transparent shadow-[0_0_15px_rgba(37,99,235,0.4)] animate-pulse" : "bg-blue-500/10 text-blue-500 border-blue-500/20 hover:bg-blue-500/20"}`}>
                   AZUL
                </button>
-               <button onClick={() => updateFlag("RED")} className={`p-4 rounded font-black text-sm uppercase border transition-all ${raceFlag === "RED" ? "bg-red-600 text-white border-transparent shadow-[0_0_15px_rgba(220,38,38,0.4)] animate-pulse" : "bg-red-500/10 text-red-500 border-red-500/20 hover:bg-red-500/20"}`}>
+               <button onClick={() => updateFlag("WHITE")} className={`p-4 rounded font-black text-sm uppercase border transition-all ${raceFlag === "WHITE" ? "bg-white text-black border-transparent shadow-[0_0_15px_rgba(255,255,255,0.4)] animate-pulse" : "bg-white/10 text-white border-white/20 hover:bg-white/20"}`}>
+                  BLANCA
+               </button>
+               <button onClick={() => updateFlag("RED")} className={`col-span-2 p-4 rounded font-black text-sm uppercase border transition-all ${raceFlag === "RED" ? "bg-red-600 text-white border-transparent shadow-[0_0_15px_rgba(220,38,38,0.4)] animate-pulse" : "bg-red-500/10 text-red-500 border-red-500/20 hover:bg-red-500/20"}`}>
                   ROJA
                </button>
                <button onClick={() => updateFlag("FINISH")} className={`col-span-2 p-4 rounded font-black text-sm uppercase border transition-all ${raceFlag === "FINISH" ? "bg-white text-black border-transparent shadow-[0_0_15px_rgba(255,255,255,0.4)]" : "bg-white/10 text-white border-white/20 hover:bg-white/20"}`}>

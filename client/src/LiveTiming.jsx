@@ -574,6 +574,7 @@ export default function LiveTiming() {
     VSC: { text: "VIRTUAL SAFETY CAR", class: "bg-orange-500 text-black animate-pulse" },
     SLOW: { text: "SLOW", class: "bg-orange-500 text-black animate-pulse" },
     BLUE: { text: "BANDERA AZUL", class: "bg-blue-600 text-white animate-pulse" },
+    WHITE: { text: "BANDERA BLANCA", class: "bg-white text-black animate-pulse" },
     FINISH: { text: "CARRERA FINALIZADA", class: "bg-white text-black" },
     GREEN: { text: "BANDERA VERDE", class: "bg-green-500 text-black" }
   };

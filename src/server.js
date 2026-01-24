@@ -543,8 +543,8 @@ async function tick() {
   }
 }
 
-// Start the loop (approx every 1s)
-setInterval(tick, 1000);
+// Start the loop (approx every 3s)
+setInterval(tick, 3000);
 
 // --- ENDPOINTS ---
 
