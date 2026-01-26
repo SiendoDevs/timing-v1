@@ -27,7 +27,7 @@ export default function LandingPage() {
 
         <div className="z-10 max-w-5xl w-full py-12 md:py-24">
           <div className="inline-block px-4 py-1.5 mb-6 rounded-full bg-white/5 border border-white/10 text-xs font-bold uppercase tracking-widest text-[var(--accent)] animate-fade-in-down">
-            Nueva Versión 1.0 Disponible
+            Nueva Versión {__APP_VERSION__} Disponible
           </div>
 
           <h1 className="text-5xl md:text-7xl font-black italic tracking-tighter uppercase mb-6 leading-tight">
