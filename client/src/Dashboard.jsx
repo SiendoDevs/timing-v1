@@ -3,6 +3,68 @@ import { QRCodeSVG } from "qrcode.react";
 
 // --- Components ---
 
+function Login({ onLogin }) {
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setLoading(true);
+    setError("");
+    try {
+      const apiOrigin = import.meta.env.VITE_API_URL || "";
+      const res = await fetch(`${apiOrigin}/api/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password })
+      });
+      const data = await res.json();
+      if (res.ok && data.token) {
+        onLogin(data.token);
+      } else {
+        setError("Contraseña incorrecta");
+      }
+    } catch (e) {
+      setError("Error de conexión");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="h-screen w-screen bg-[#0a0a0a] flex items-center justify-center text-white">
+      <form onSubmit={handleSubmit} className="bg-[#141414] p-8 rounded-xl border border-white/10 w-full max-w-sm space-y-6 shadow-2xl">
+        <div className="text-center space-y-2">
+           <div className="w-12 h-12 bg-[var(--accent)] mx-auto transform -skew-x-12 mb-4" />
+           <h1 className="text-2xl font-black italic uppercase">Admin Access</h1>
+        </div>
+        
+        <div className="space-y-2">
+           <label className="text-xs font-bold uppercase tracking-wider opacity-60">Password</label>
+           <input 
+             type="password" 
+             value={password}
+             onChange={e => setPassword(e.target.value)}
+             className="w-full px-4 py-3 rounded bg-black/40 border border-white/10 outline-none focus:border-[var(--accent)] transition-colors text-center tracking-widest text-lg"
+             autoFocus
+             placeholder="••••••••"
+           />
+        </div>
+
+        {error && <div className="text-red-500 text-sm font-bold text-center bg-red-500/10 py-2 rounded border border-red-500/20">{error}</div>}
+
+        <button 
+          disabled={loading}
+          className="w-full py-3 bg-[var(--accent)] text-black font-bold uppercase italic tracking-wider rounded hover:brightness-110 transition-all disabled:opacity-50"
+        >
+          {loading ? "Verificando..." : "Entrar"}
+        </button>
+      </form>
+    </div>
+  );
+}
+
 function Input({ label, value, onChange, placeholder }) {
   return (
     <label className="block w-full">
@@ -64,6 +126,9 @@ function ActionButton({ onClick, disabled, active, label, activeLabel, type = "n
 }
 
 export default function Dashboard() {
+  // Auth State
+  const [token, setToken] = useState(() => localStorage.getItem("admin_token"));
+  
   // State
   const [url, setUrl] = useState("");
   const [overlayEnabled, setOverlayEnabled] = useState(true);
@@ -95,7 +160,19 @@ export default function Dashboard() {
   const [voteStats, setVoteStats] = useState({ totalVotes: 0, candidates: [] });
 
   // Effects & Logic
+  
+  function logout() {
+    setToken(null);
+    localStorage.removeItem("admin_token");
+  }
+
+  function handleLogin(newToken) {
+    setToken(newToken);
+    localStorage.setItem("admin_token", newToken);
+  }
+
   useEffect(() => {
+    if (!token) return;
     const apiOrigin = import.meta.env.VITE_API_URL || "";
     const fetchLoop = async () => {
       try {
@@ -126,9 +203,10 @@ export default function Dashboard() {
     const interval = setInterval(fetchLoop, 1000);
     fetchLoop();
     return () => clearInterval(interval);
-  }, []);
+  }, [token]);
 
   useEffect(() => {
+    if (!token) return;
     document.title = "DASHBOARD | StreamRace 1.0";
     loadConfig();
     const interval = setInterval(() => {
@@ -137,7 +215,7 @@ export default function Dashboard() {
       }
     }, 2000);
     return () => clearInterval(interval);
-  }, []);
+  }, [token]);
 
   useEffect(() => {
     if (raceFlag && raceFlag.startsWith("BLACK:")) {
@@ -145,6 +223,10 @@ export default function Dashboard() {
       if (parts[1]) setBlackFlagNum(parts[1]);
     }
   }, [raceFlag]);
+
+  if (!token) {
+    return <Login onLogin={handleLogin} />;
+  }
 
   async function loadConfig() {
     const apiOrigin = import.meta.env.VITE_API_URL || "";
@@ -185,9 +267,18 @@ export default function Dashboard() {
 
       const res = await fetch(`${apiOrigin}/api/config`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
         body: JSON.stringify(body)
       });
+      
+      if (res.status === 401) {
+        logout();
+        return;
+      }
+
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Error");
       
@@ -231,11 +322,17 @@ export default function Dashboard() {
     setSaving(true);
     try {
       const apiOrigin = import.meta.env.VITE_API_URL || "";
-      await fetch(`${apiOrigin}/api/voting/start`, {
+      const res = await fetch(`${apiOrigin}/api/voting/start`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`
+        },
         body: JSON.stringify({ candidates: selectedCandidates })
       });
+      
+      if (res.status === 401) { logout(); return; }
+
       setVotingActive(true);
       setVotingCandidates(selectedCandidates);
       setStatus("Votación iniciada");
@@ -247,7 +344,13 @@ export default function Dashboard() {
     setSaving(true);
     try {
       const apiOrigin = import.meta.env.VITE_API_URL || "";
-      await fetch(`${apiOrigin}/api/voting/stop`, { method: "POST" });
+      const res = await fetch(`${apiOrigin}/api/voting/stop`, { 
+        method: "POST", 
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      
+      if (res.status === 401) { logout(); return; }
+
       setVotingActive(false);
       setStatus("Votación finalizada");
     } catch (e) { setStatus(String(e)); } 
@@ -266,11 +369,15 @@ export default function Dashboard() {
     setRaceFlag(flag);
     try {
       const apiOrigin = import.meta.env.VITE_API_URL || "";
-      await fetch(`${apiOrigin}/api/flag`, {
+      const res = await fetch(`${apiOrigin}/api/flag`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`
+        },
         body: JSON.stringify({ flag })
       });
+      if (res.status === 401) logout();
     } catch (e) { console.error(e); }
   }
 
@@ -298,6 +405,9 @@ export default function Dashboard() {
 
           <div className="ml-auto flex items-center gap-3 text-xs font-mono">
              {status && <div className="text-white/60 uppercase tracking-wider animate-pulse mr-4">{status}</div>}
+             <button onClick={logout} className="px-3 py-1 bg-red-500/10 border border-red-500/20 text-red-400 rounded hover:bg-red-500/20 transition-all font-bold uppercase">
+                Logout
+             </button>
              <button 
                 onClick={() => saveConfig({ scrapingEnabled: !scrapingEnabled })}
                 className={`px-3 py-1 rounded font-bold uppercase transition-all border ${

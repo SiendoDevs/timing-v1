@@ -42,10 +42,24 @@ try {
 }
 
 const PORT = process.env.PORT || 3000;
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "admin123";
+const sessions = new Set();
 
 const app = express();
 app.use(express.json({ limit: '50mb' }));
 app.use(cors());
+
+// Auth Middleware
+const requireAuth = (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  const token = authHeader && authHeader.split(" ")[1];
+  if (token && sessions.has(token)) {
+    next();
+  } else {
+    res.status(401).json({ error: "Unauthorized" });
+  }
+};
+
 app.use("/api", (req, res, next) => {
   res.header("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
   res.header("Pragma", "no-cache");
@@ -548,6 +562,27 @@ setInterval(tick, 3000);
 
 // --- ENDPOINTS ---
 
+app.post("/api/login", (req, res) => {
+  const { password } = req.body;
+  if (password === ADMIN_PASSWORD) {
+    const token = Math.random().toString(36).substring(2) + Date.now().toString(36);
+    sessions.add(token);
+    res.json({ token });
+  } else {
+    res.status(401).json({ error: "Invalid password" });
+  }
+});
+
+app.post("/api/verify-token", (req, res) => {
+  const authHeader = req.headers.authorization;
+  const token = authHeader && authHeader.split(" ")[1];
+  if (token && sessions.has(token)) {
+    res.json({ valid: true });
+  } else {
+    res.status(401).json({ valid: false });
+  }
+});
+
 app.get("/api/standings", async (req, res) => {
   const debug = req.query?.debug === "1";
   const testUrl = req.query?.url;
@@ -580,7 +615,7 @@ app.get("/api/standings", async (req, res) => {
   }
 });
 
-app.post("/api/flag", (req, res) => {
+app.post("/api/flag", requireAuth, (req, res) => {
   try {
     const { flag } = req.body;
     if (flag) {
@@ -602,7 +637,7 @@ app.get("/api/config", (_req, res) => {
   res.json({ speedhiveUrl, overlayEnabled, scrapingEnabled, commentsEnabled, votingWidgetEnabled, overtakesEnabled, currentLapEnabled, fastestLapEnabled, lapFinishEnabled, raceFlag });
 });
 
-app.post("/api/config", async (req, res) => {
+app.post("/api/config", requireAuth, async (req, res) => {
   try {
     const { speedhiveUrl: nextUrl, overlayEnabled: nextOverlayEnabled, scrapingEnabled: nextScrapingEnabled, commentsEnabled: nextCommentsEnabled, votingWidgetEnabled: nextVotingWidgetEnabled, overtakesEnabled: nextOvertakesEnabled, currentLapEnabled: nextCurrentLapEnabled, fastestLapEnabled: nextFastestLapEnabled, lapFinishEnabled: nextLapFinishEnabled, initialData } = req.body || {};
     
@@ -721,7 +756,7 @@ app.get("/api/voting/status", async (req, res) => {
   }
 });
 
-app.post("/api/voting/start", async (req, res) => {
+app.post("/api/voting/start", requireAuth, async (req, res) => {
   try {
     const { candidates } = req.body;
     if (!Array.isArray(candidates) || candidates.length === 0) {
@@ -751,7 +786,7 @@ app.post("/api/voting/start", async (req, res) => {
   }
 });
 
-app.post("/api/voting/stop", async (req, res) => {
+app.post("/api/voting/stop", requireAuth, async (req, res) => {
   try {
     if (useRedis) {
       await redisClient.set('timing_voting:active', 'false');
