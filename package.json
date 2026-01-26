@@ -1,8 +1,8 @@
 {
-  "name": "obs-speedhive-overlay",
-  "version": "1.0.1",
+  "name": "streamrace-overlay",
+  "version": "1.1.0",
   "private": true,
-  "description": "Overlay para OBS que obtiene leaderboard desde Speedhive (React + Vite + Tailwind)",
+  "description": "StreamRace Overlay - Sistema de gestión de gráficos y tiempos para OBS",
   "type": "module",
   "scripts": {
     "start": "node src/server.js",

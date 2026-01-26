@@ -20,6 +20,7 @@ let lapFinishEnabled = true;
 let raceFlag = "GREEN"; // Default flag
 let publicUrl = ""; // For QR codes
 const CONFIG_FILE = path.resolve("config.json");
+const USERS_FILE = path.resolve("users.json");
 
 console.log("---------------------------------------------------");
 console.log("---  SERVER STARTING: SPANISH COMMENTS ENABLED  ---");
@@ -47,8 +48,53 @@ try {
   console.error("Error loading config:", e);
 }
 
+// --- USER MANAGEMENT ---
+let users = [];
+const DEFAULT_ADMIN = {
+  username: "admin",
+  password: process.env.ADMIN_PASSWORD || "admin123",
+  role: "admin"
+};
+
+function loadUsers() {
+  try {
+    if (fs.existsSync(USERS_FILE)) {
+      const raw = fs.readFileSync(USERS_FILE, "utf-8");
+      users = JSON.parse(raw);
+      // Ensure admin exists if env var changed or file is old
+      const envAdminPass = process.env.ADMIN_PASSWORD;
+      const adminUser = users.find(u => u.username === "admin");
+      if (adminUser && envAdminPass && adminUser.password !== envAdminPass) {
+          // Optional: Update admin password if env var changes? 
+          // Better to respect file if it exists, so user changes via UI persist.
+          // But for initial setup, we might want to ensure at least one admin.
+      }
+      if (!adminUser) {
+          users.push(DEFAULT_ADMIN);
+          saveUsers();
+      }
+    } else {
+      users = [DEFAULT_ADMIN];
+      saveUsers();
+    }
+    console.log(`Loaded ${users.length} users.`);
+  } catch (e) {
+    console.error("Error loading users:", e);
+    users = [DEFAULT_ADMIN];
+  }
+}
+
+function saveUsers() {
+  try {
+    fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
+  } catch (e) {
+    console.error("Error saving users:", e);
+  }
+}
+
+loadUsers();
+
 const PORT = process.env.PORT || 3000;
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "admin123";
 const sessions = new Set();
 
 const app = express();
@@ -622,13 +668,64 @@ setInterval(tick, 3000);
 // --- ENDPOINTS ---
 
 app.post("/api/login", (req, res) => {
-  const { password } = req.body;
-  if (password === ADMIN_PASSWORD) {
+  const { username, password } = req.body;
+
+  // Compatibility with old frontend (only password) -> assume admin
+  if (!username && password) {
+    const admin = users.find(u => u.username === "admin");
+    if (admin && admin.password === password) {
+       const token = Math.random().toString(36).substring(2) + Date.now().toString(36);
+       sessions.add(token);
+       return res.json({ token, username: "admin", role: "admin" });
+    }
+    return res.status(401).json({ error: "Invalid password" });
+  }
+
+  const user = users.find(u => u.username === username && u.password === password);
+  if (user) {
     const token = Math.random().toString(36).substring(2) + Date.now().toString(36);
     sessions.add(token);
-    res.json({ token });
+    res.json({ token, username: user.username, role: user.role || "user" });
   } else {
-    res.status(401).json({ error: "Invalid password" });
+    res.status(401).json({ error: "Credenciales inválidas" });
+  }
+});
+
+// --- USER MANAGEMENT ENDPOINTS ---
+
+app.get("/api/users", requireAuth, (req, res) => {
+  const safeUsers = users.map(u => ({ username: u.username, role: u.role || "user" }));
+  res.json(safeUsers);
+});
+
+app.post("/api/users", requireAuth, (req, res) => {
+  const { username, password, role } = req.body;
+  if (!username || !password) {
+    return res.status(400).json({ error: "Faltan datos (usuario y contraseña requeridos)" });
+  }
+  if (users.find(u => u.username === username)) {
+    return res.status(400).json({ error: "El usuario ya existe" });
+  }
+  
+  users.push({ username, password, role: role || "user" });
+  saveUsers();
+  res.json({ ok: true, username });
+});
+
+app.delete("/api/users/:username", requireAuth, (req, res) => {
+  const { username } = req.params;
+  if (username === "admin") {
+    return res.status(400).json({ error: "No se puede eliminar al usuario admin principal" });
+  }
+  
+  const initialLen = users.length;
+  users = users.filter(u => u.username !== username);
+  
+  if (users.length !== initialLen) {
+    saveUsers();
+    res.json({ ok: true });
+  } else {
+    res.status(404).json({ error: "Usuario no encontrado" });
   }
 });
 

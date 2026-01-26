@@ -5,6 +5,27 @@ Todas las variaciones notables de este proyecto serán documentadas en este arch
 El formato está basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/),
 y este proyecto se adhiere a [Semantic Versioning](https://semver.org/lang/es/).
 
+## [1.1.0] - 2026-01-26
+### Añadido
+- **Gestión de Usuarios:** Nuevo sistema multi-usuario con persistencia en archivo local (`users.json`).
+- **Dashboard UI:** Nueva interfaz para crear, visualizar y eliminar usuarios desde el panel de administración.
+- **Autenticación:** Soporte completo para login con usuario y contraseña.
+
+### Seguridad
+- **Protección de Datos:** Exclusión de `users.json` en el repositorio para proteger credenciales.
+- **Compatibilidad:** Mantenido soporte para login antiguo (solo contraseña) para evitar bloqueos en actualizaciones.
+
+## [1.1.0] - 2026-01-26
+### Añadido
+- **Gestión de Usuarios:** Sistema completo para crear, listar y eliminar usuarios sin tocar el código del servidor.
+- **Persistencia:** Almacenamiento local de usuarios en `users.json`.
+- **Interfaz:** Nueva sección de gestión de usuarios en el Dashboard.
+- **Seguridad:** Soporte para múltiples usuarios con autenticación completa (usuario + contraseña).
+
+### Cambiado
+- **Identidad:** Renombrado del proyecto a **StreamRace Overlay**.
+- **Login:** Actualizado formulario de acceso para requerir usuario y contraseña.
+
 ## [1.0.1] - 2026-01-26
 ### Corregido
 - Actualizada dependencia `puppeteer` a la última versión para resolver advertencia de deprecación (< 24.15.0).
