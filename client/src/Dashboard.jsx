@@ -529,7 +529,7 @@ export default function Dashboard() {
         <div className="w-full px-6 py-3 flex items-center gap-6">
           <div className="flex items-center gap-3">
             <div className="w-4 h-4 bg-[var(--accent)] transform -skew-x-12" />
-            <div className="font-black tracking-tighter text-xl text-white italic">STREAMRACE 1.0</div>
+            <div className="font-black tracking-tighter text-xl text-white italic">STREAMRACE {__APP_VERSION__}</div>
           </div>
           
           <div className="h-6 w-px bg-white/10" />
