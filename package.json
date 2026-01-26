@@ -1,6 +1,6 @@
 {
   "name": "obs-speedhive-overlay",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "Overlay para OBS que obtiene leaderboard desde Speedhive (React + Vite + Tailwind)",
   "type": "module",
@@ -16,7 +16,7 @@
     "express": "^4.21.1",
     "i18next": "^25.8.0",
     "lucide-react": "^0.562.0",
-    "puppeteer": "^23.7.0",
+    "puppeteer": "^24.36.0",
     "qrcode.react": "^4.2.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

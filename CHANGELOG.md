@@ -5,6 +5,10 @@ Todas las variaciones notables de este proyecto serán documentadas en este arch
 El formato está basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/),
 y este proyecto se adhiere a [Semantic Versioning](https://semver.org/lang/es/).
 
+## [1.0.1] - 2026-01-26
+### Corregido
+- Actualizada dependencia `puppeteer` a la última versión para resolver advertencia de deprecación (< 24.15.0).
+
 ## [1.0.0] - 2026-01-26
 ### Añadido
 - **Traducción Automática:** Implementación de hook `useAutoTranslation` para traducir anuncios de carrera (Inglés -> Español) en tiempo real usando API externa.
