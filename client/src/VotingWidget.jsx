@@ -26,9 +26,13 @@ export default function VotingWidget() {
 
   // Sort and take top 3
   const sorted = [...(data.candidates || [])].sort((a,b) => b.votes - a.votes).slice(0, 3);
-  const voteUrl = window.location.origin + "/vote";
+  const voteUrl = data.publicUrl ? `${data.publicUrl.replace(/\/$/, "")}/vote` : `${window.location.origin}/vote`;
   
   const isFinished = !data.active && data.candidates && data.candidates.length > 0 && data.totalVotes > 0;
+  
+  // If not active and not finished (meaning either no candidates or no votes), hide widget
+  if (!data.active && !isFinished) return null;
+
   const winner = sorted[0];
 
   if (isFinished && winner) {

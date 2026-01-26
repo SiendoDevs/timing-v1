@@ -1,11 +1,12 @@
 {
-  "speedhiveUrl": "https://speedhive.mylaps.com/livetiming/A2AB975A5BB35CC7-2147486262/active",
-  "overlayEnabled": false,
-  "scrapingEnabled": false,
-  "commentsEnabled": false,
-  "votingWidgetEnabled": false,
-  "overtakesEnabled": false,
-  "currentLapEnabled": false,
-  "fastestLapEnabled": false,
-  "lapFinishEnabled": false
+  "speedhiveUrl": "https://speedhive.mylaps.com/livetiming/141E44B9DFD1E589-2147487615/active",
+  "overlayEnabled": true,
+  "scrapingEnabled": true,
+  "commentsEnabled": true,
+  "votingWidgetEnabled": true,
+  "overtakesEnabled": true,
+  "currentLapEnabled": true,
+  "fastestLapEnabled": true,
+  "lapFinishEnabled": true,
+  "raceFlag": "GREEN"
 }

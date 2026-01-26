@@ -66,7 +66,7 @@ export default function LiveTiming() {
   const widthPxParam = params.get("wp");
   const marginParam = params.get("m");
 
-  const [title, setTitle] = useState("Live Timing");
+  const [title, setTitle] = useState("Tiempos en Vivo");
   const [lapsLabel, setLapsLabel] = useState("");
   const [finishFlag, setFinishFlag] = useState(false);
   const [raceFlag, setRaceFlag] = useState("GREEN");
@@ -294,7 +294,6 @@ export default function LiveTiming() {
 
   useEffect(() => {
     if (!showFastestLap) {
-      // Cleanup FASTEST events if disabled
       eventQueue.current = eventQueue.current.filter(e => e.type !== 'FASTEST');
       if (activeCard?.type === 'FASTEST') {
         setActiveCard(null);
@@ -304,7 +303,6 @@ export default function LiveTiming() {
 
   useEffect(() => {
     if (!showLapFinish) {
-      // Cleanup FINISH events if disabled
       eventQueue.current = eventQueue.current.filter(e => e.type !== 'FINISH');
       if (activeCard?.type === 'FINISH') {
         setActiveCard(null);
@@ -320,7 +318,6 @@ export default function LiveTiming() {
     const timer = setInterval(() => {
         const fastestIdx = eventQueue.current.findIndex(e => e.type === 'FASTEST');
 
-        // Priority Interruption: If showing FINISH but a FASTEST comes in, interrupt!
         if (activeCard && activeCard.type === 'FINISH' && fastestIdx >= 0) {
             if (cardTimerRef.current) {
                 clearInterval(cardTimerRef.current);
@@ -332,10 +329,9 @@ export default function LiveTiming() {
             return;
         }
 
-        if (activeCard) return; // Busy
+        if (activeCard) return; 
         if (eventQueue.current.length === 0) return;
 
-        // Normal Scheduling: Priority: FASTEST > FINISH
         let nextEvent;
         if (fastestIdx >= 0) {
              nextEvent = eventQueue.current.splice(fastestIdx, 1)[0];
@@ -391,48 +387,46 @@ export default function LiveTiming() {
     }, 50);
   }
 
+  // --- Main Data Loop (Optimized) ---
+  const lastSessionNameRef = useRef("");
+
   useEffect(() => {
     let mounted = true;
-    async function load() {
+    let timerId = null;
+
+    async function loop() {
+      if (!showOverlay) return;
       try {
         const apiOrigin = import.meta.env.VITE_API_URL || "";
         const res = await fetch(`${apiOrigin}/api/standings`);
+        if (!res.ok) throw new Error("Fetch error");
         const data = await res.json();
+        
         if (!mounted) return;
-        let nextTitle = data.sessionName ? String(data.sessionName) : "Live Timing";
+
+        let nextTitle = data.sessionName ? String(data.sessionName) : "Tiempos en Vivo";
+        
+        // Reset lastPositions if session changes
+        if (data.sessionName && data.sessionName !== lastSessionNameRef.current) {
+            lastSessionNameRef.current = data.sessionName;
+            lastPositions.current.clear();
+            eventQueue.current = []; // Clear queue on session change
+            prevLapsRef.current = null;
+        }
+
         let nextFlag = !!data.flagFinish;
         let nextRaceFlag = data.raceFlag || "GREEN";
         let list = (data.standings || []);
         const anns = Array.isArray(data.announcements) ? data.announcements : [];
         let nextLaps = data.sessionLaps;
 
-        if (!list.length) {
-          try {
-            const snap = JSON.parse(localStorage.getItem(SNAP_KEY) || "{}");
-            const snapTitle = snap.title || "";
-            const srvTitle = data.sessionName || "";
-            const isDifferentSession = srvTitle && snapTitle && srvTitle !== snapTitle;
-            const isNewerState = snap.finishFlag && data.flagFinish === false;
-
-            if (!isDifferentSession && !isNewerState) {
-              if (Array.isArray(snap.rows) && snap.rows.length) {
-                list = snap.rows;
-                nextTitle = snap.title || nextTitle;
-                nextFlag = !!snap.finishFlag;
-                nextLaps = snap.sessionLaps || nextLaps;
-              }
-            }
-          } catch {}
-        } else {
-          try {
-            const snap = { rows: list, title: nextTitle, finishFlag: nextFlag, sessionLaps: nextLaps, announcements: anns };
-            localStorage.setItem(SNAP_KEY, JSON.stringify(snap));
-          } catch {}
-        }
+        // Removing localStorage heavy I/O from critical loop
+        
         setTitle(nextTitle);
         setFinishFlag(nextFlag);
         setRaceFlag(nextRaceFlag);
         setAnnItems(anns);
+        
         let laps = nextLaps;
         if (!laps) laps = computeLaps(list || []);
         
@@ -460,83 +454,68 @@ export default function LiveTiming() {
           renderEffects(prev, list, nextFlag);
           return list;
         });
+
       } catch (e) {
+        // Silent error
+      }
+
+      // Recursive timeout for better flow control
+      if (mounted) {
+          timerId = setTimeout(loop, 1000);
       }
     }
-    if (showOverlay) {
-      load();
-    }
-    const t = showOverlay ? setInterval(load, 1000) : null;
-    const mt = showOverlay ? setInterval(() => {
-      setModeIdx(prev => (prev + 1) % MODES.length);
-    }, 6000) : null;
 
-    if (!showOverlay) {
-      setActiveCard(null);
-      eventQueue.current = [];
-    }
+    loop();
+
+    // Mode cycler
+    const mt = setInterval(() => {
+      setModeIdx(prev => (prev + 1) % MODES.length);
+    }, 6000);
+
     return () => {
       mounted = false;
-      if (t) clearInterval(t);
-      if (mt) clearInterval(mt);
+      if (timerId) clearTimeout(timerId);
+      clearInterval(mt);
     };
-  }, [limitParam, showOverlay, showFastestLap, showLapFinish]);
+  }, [showOverlay]); // Removed other dependencies to avoid re-creating the loop unnecessarily
 
+  // --- Config Loop (Optimized) ---
   useEffect(() => {
-    let alive = true;
+    let mounted = true;
+    let timerId = null;
+
     async function loadConfig() {
       try {
-        const res = await fetch("/api/config");
-        const data = await res.json();
-        if (!alive) return;
-        setShowOverlay(data.overlayEnabled !== false);
-        setShowComments(data.commentsEnabled !== false);
-        setShowVotingWidget(data.votingWidgetEnabled !== false);
-        setShowOvertakes(data.overtakesEnabled !== false);
-        setShowCurrentLap(data.currentLapEnabled !== false);
-        setShowFastestLap(data.fastestLapEnabled !== false);
-        setShowLapFinish(data.lapFinishEnabled !== false);
+        const apiOrigin = import.meta.env.VITE_API_URL || "";
+        const res = await fetch(`${apiOrigin}/api/config`);
+        if (res.ok) {
+            const data = await res.json();
+            if (mounted) {
+                setShowOverlay(data.overlayEnabled !== false);
+                setShowComments(data.commentsEnabled !== false);
+                setShowVotingWidget(data.votingWidgetEnabled !== false);
+                setShowOvertakes(data.overtakesEnabled !== false);
+                setShowCurrentLap(data.currentLapEnabled !== false);
+                setShowFastestLap(data.fastestLapEnabled !== false);
+                setShowLapFinish(data.lapFinishEnabled !== false);
+            }
+        }
       } catch {}
+      
+      if (mounted) {
+          timerId = setTimeout(loadConfig, 3000); // Increased interval to 3s
+      }
     }
+    
     loadConfig();
-    const ci = setInterval(loadConfig, 1000);
     return () => {
-      alive = false;
-      clearInterval(ci);
+      mounted = false;
+      if (timerId) clearTimeout(timerId);
     };
   }, []);
 
-  useEffect(() => {
-    if (showOverlay) {
-      try {
-        const snap = JSON.parse(localStorage.getItem(SNAP_KEY) || "{}");
-        if ((!rows || rows.length === 0) && Array.isArray(snap.rows) && snap.rows.length) {
-          setRows(snap.rows);
-          if (snap.title) setTitle(String(snap.title));
-          setFinishFlag(!!snap.finishFlag);
-          let laps = snap.sessionLaps;
-          if (!laps) laps = computeLaps(snap.rows || []);
-          setLapsLabel(laps ? `Vueltas: ${laps}` : "");
-          if (Array.isArray(snap.announcements)) setAnnItems(snap.announcements);
-        }
-      } catch {}
-    }
-    // eslint-disable-next-line
-  }, [showOverlay]);
-  useEffect(() => {
-    try {
-      const snap = JSON.parse(localStorage.getItem(SNAP_KEY) || "{}");
-      if (Array.isArray(snap.rows) && snap.rows.length) {
-        setRows(snap.rows);
-        if (snap.title) setTitle(String(snap.title));
-        setFinishFlag(!!snap.finishFlag);
-        let laps = snap.sessionLaps;
-        if (!laps) laps = computeLaps(snap.rows || []);
-        setLapsLabel(laps ? `Vueltas: ${laps}` : "");
-      }
-    } catch {}
-    // eslint-disable-next-line
-  }, []);
+  // Removed localStorage restoration logic that was causing hydration issues
+
 
   const fi = fastestIndex(rows);
   let bestOver = null;

@@ -131,6 +131,7 @@ export default function Dashboard() {
   
   // State
   const [url, setUrl] = useState("");
+  const [publicUrl, setPublicUrl] = useState("");
   const [overlayEnabled, setOverlayEnabled] = useState(true);
   const [scrapingEnabled, setScrapingEnabled] = useState(true);
   const [commentsEnabled, setCommentsEnabled] = useState(true);
@@ -208,7 +209,7 @@ export default function Dashboard() {
   useEffect(() => {
     if (!token) return;
     document.title = "DASHBOARD | StreamRace 1.0";
-    loadConfig();
+    loadConfig(true); // true = isInitial load, don't set URL
     const interval = setInterval(() => {
       if (!savingRef.current) {
         loadConfig();
@@ -228,11 +229,12 @@ export default function Dashboard() {
     return <Login onLogin={handleLogin} />;
   }
 
-  async function loadConfig() {
+  async function loadConfig(isInitial = false) {
     const apiOrigin = import.meta.env.VITE_API_URL || "";
     const res = await fetch(`${apiOrigin}/api/config`);
     const data = await res.json();
-    setUrl(data.speedhiveUrl || "");
+    if (!isInitial) setUrl(data.speedhiveUrl || "");
+    if (!isInitial) setPublicUrl(data.publicUrl || "");
     setOverlayEnabled(data.overlayEnabled !== false);
     setScrapingEnabled(data.scrapingEnabled !== false);
     setCommentsEnabled(data.commentsEnabled !== false);
@@ -252,7 +254,8 @@ export default function Dashboard() {
       const initialData = (fullData && fullData.source === url) ? fullData : null;
       
       const body = { 
-        speedhiveUrl: url, 
+        speedhiveUrl: url,
+        publicUrl, 
         overlayEnabled, 
         scrapingEnabled, 
         commentsEnabled, 
@@ -351,6 +354,11 @@ export default function Dashboard() {
       
       if (res.status === 401) { logout(); return; }
 
+      // If finished with 0 votes, clear selection
+      if (voteStats.totalVotes === 0) {
+        setSelectedCandidates([]);
+      }
+
       setVotingActive(false);
       setStatus("Votación finalizada");
     } catch (e) { setStatus(String(e)); } 
@@ -399,14 +407,14 @@ export default function Dashboard() {
              {sessionName ? (
                <div className="text-white font-bold tracking-wide uppercase">{sessionName}</div>
              ) : (
-               <div className="text-white/30 font-mono text-sm">NO SESSION</div>
+               <div className="text-white/30 font-mono text-sm">SIN SESIÓN</div>
              )}
           </div>
 
           <div className="ml-auto flex items-center gap-3 text-xs font-mono">
              {status && <div className="text-white/60 uppercase tracking-wider animate-pulse mr-4">{status}</div>}
              <button onClick={logout} className="px-3 py-1 bg-red-500/10 border border-red-500/20 text-red-400 rounded hover:bg-red-500/20 transition-all font-bold uppercase">
-                Logout
+                Salir
              </button>
              <button 
                 onClick={() => saveConfig({ scrapingEnabled: !scrapingEnabled })}
@@ -415,13 +423,13 @@ export default function Dashboard() {
                     ? "bg-green-500/10 border-green-500/20 text-green-500 hover:bg-green-500/20" 
                     : "bg-red-500/10 border-red-500/20 text-red-500 hover:bg-red-500/20"
                 }`}
-             >
-                {scrapingEnabled ? "SCRAPING ON" : "SCRAPING OFF"}
+              >
+                {scrapingEnabled ? "SCRAPING ACTIVO" : "SCRAPING PAUSADO"}
              </button>
 
              <div className={`px-2 py-1 rounded flex items-center gap-2 border ${updateDuration > 500 ? 'bg-yellow-500/10 border-yellow-500/20 text-yellow-500' : 'bg-green-500/10 border-green-500/20 text-green-500'}`}>
                 <div className={`w-1.5 h-1.5 rounded-full ${updateDuration > 500 ? 'bg-yellow-500' : 'bg-green-500'}`} />
-                LATENCY: {updateDuration || 0}ms
+                LATENCIA: {updateDuration || 0}ms
              </div>
              {lastUpdated && <div className="text-white/40">{new Date(lastUpdated).toLocaleTimeString()}</div>}
           </div>
@@ -443,9 +451,15 @@ export default function Dashboard() {
                 onChange={setUrl}
                 placeholder="https://speedhive.mylaps.com/..."
               />
+              <Input
+                label="URL Pública de Votación (Opcional)"
+                value={publicUrl}
+                onChange={setPublicUrl}
+                placeholder="https://tudominio.com (para QR)"
+              />
               <div className="grid grid-cols-2 gap-3">
                  <ActionButton onClick={() => saveConfig()} disabled={saving} label="Guardar" type="normal" />
-                 <ActionButton onClick={probar} label="Test Conn" type="link" />
+                 <ActionButton onClick={probar} label="Probar" type="link" />
               </div>
             </div>
           </div>
@@ -503,10 +517,17 @@ export default function Dashboard() {
                 </button>
               </div>
 
-              <div className="pt-2 border-t border-white/5 grid grid-cols-3 gap-2">
-                 <button onClick={() => window.open("/", "_blank")} className="px-2 py-2 text-[10px] font-bold uppercase bg-white/5 hover:bg-white/10 rounded border border-white/5 text-center">Overlay</button>
-                 <button onClick={() => window.open("/grid", "_blank")} className="px-2 py-2 text-[10px] font-bold uppercase bg-white/5 hover:bg-white/10 rounded border border-white/5 text-center">Grid</button>
-                 <button onClick={() => window.open("/results", "_blank")} className="px-2 py-2 text-[10px] font-bold uppercase bg-white/5 hover:bg-white/10 rounded border border-white/5 text-center">Results</button>
+              <div className="pt-2 border-t border-white/5">
+                 <div className="font-bold text-[10px] text-white/40 uppercase mb-2 text-center">Overlays</div>
+                 <div className="grid grid-cols-3 gap-2">
+                   <button onClick={() => window.open("/livetiming", "_blank")} className="px-2 py-2 text-[10px] font-bold uppercase bg-white/5 hover:bg-white/10 rounded border border-white/5 text-center">Timing</button>
+                   <button onClick={() => window.open("/grid", "_blank")} className="px-2 py-2 text-[10px] font-bold uppercase bg-white/5 hover:bg-white/10 rounded border border-white/5 text-center">Grid</button>
+                   <button onClick={() => window.open("/results", "_blank")} className="px-2 py-2 text-[10px] font-bold uppercase bg-white/5 hover:bg-white/10 rounded border border-white/5 text-center">Results</button>
+                 </div>
+              </div>
+              
+              <div className="mt-4 text-center">
+                <span className="text-[10px] font-mono text-white/20">v{__APP_VERSION__}</span>
               </div>
             </div>
           </div>
@@ -654,11 +675,11 @@ export default function Dashboard() {
              {votingActive && (
                <div className="w-full bg-white/5 p-4 flex flex-col items-center justify-center gap-4 text-center border-t border-white/5">
                   <div className="p-2 bg-white rounded-xl shadow-2xl">
-                    <QRCodeSVG value={`${window.location.protocol}//${window.location.hostname}:${window.location.port}/vote`} size={120} />
+                    <QRCodeSVG value={publicUrl ? `${publicUrl.replace(/\/$/, "")}/vote` : `${window.location.protocol}//${window.location.hostname}:${window.location.port}/vote`} size={120} />
                   </div>
                   <div className="space-y-1">
-                    <a href="/vote" target="_blank" className="text-blue-400 hover:text-blue-300 text-xs underline decoration-blue-500/30 underline-offset-4">
-                      /vote page
+                    <a href={publicUrl ? `${publicUrl.replace(/\/$/, "")}/vote` : "/vote"} target="_blank" className="text-blue-400 hover:text-blue-300 text-xs underline decoration-blue-500/30 underline-offset-4">
+                      {publicUrl ? `${publicUrl.replace(/\/$/, "")}/vote` : "/vote page"}
                     </a>
                   </div>
                </div>
@@ -670,8 +691,31 @@ export default function Dashboard() {
         <div className="col-span-12 xl:col-span-5 flex flex-col bg-[#141414] rounded-xl border border-white/5 overflow-hidden shadow-2xl min-h-0">
           <SectionHeader title="Selección de Candidatos" icon="📋" />
           <div className="flex-1 overflow-auto custom-scrollbar">
+            {/* Quick Selection Toolbar */}
+            <div className="sticky top-0 z-20 bg-[#1a1a1a] border-b border-white/5 p-2 flex gap-2 overflow-x-auto">
+                <button onClick={() => setSelectedCandidates([])} className="px-2 py-1 text-[10px] font-bold uppercase bg-white/5 hover:bg-red-500/20 hover:text-red-400 border border-white/10 rounded transition-colors whitespace-nowrap">
+                   Limpiar
+                </button>
+                <div className="w-px h-6 bg-white/10 mx-1" />
+                <button onClick={() => setSelectedCandidates(previewRows.slice(0, 3).map(r => ({ number: r.number, name: r.name })))} className="px-2 py-1 text-[10px] font-bold uppercase bg-white/5 hover:bg-white/10 border border-white/10 rounded transition-colors whitespace-nowrap">
+                   Top 3
+                </button>
+                <button onClick={() => setSelectedCandidates(previewRows.slice(0, 5).map(r => ({ number: r.number, name: r.name })))} className="px-2 py-1 text-[10px] font-bold uppercase bg-white/5 hover:bg-white/10 border border-white/10 rounded transition-colors whitespace-nowrap">
+                   Top 5
+                </button>
+                <button onClick={() => setSelectedCandidates(previewRows.slice(0, 10).map(r => ({ number: r.number, name: r.name })))} className="px-2 py-1 text-[10px] font-bold uppercase bg-white/5 hover:bg-white/10 border border-white/10 rounded transition-colors whitespace-nowrap">
+                   Top 10
+                </button>
+                <button onClick={() => setSelectedCandidates(previewRows.map(r => ({ number: r.number, name: r.name })))} className="px-2 py-1 text-[10px] font-bold uppercase bg-white/5 hover:bg-white/10 border border-white/10 rounded transition-colors whitespace-nowrap">
+                   Todos
+                </button>
+                <div className="ml-auto flex items-center text-[10px] font-mono text-white/40">
+                   {selectedCandidates.length} SELECCIONADOS
+                </div>
+            </div>
+
             <table className="w-full text-left border-collapse">
-              <thead className="sticky top-0 bg-[#1a1a1a] z-10 shadow-lg">
+              <thead className="sticky top-[45px] bg-[#1a1a1a] z-10 shadow-lg">
                 <tr className="text-xs font-bold uppercase tracking-wider text-white/50">
                   <th className="p-3 w-10 text-center">Sel</th>
                   <th className="p-3">Pos</th>

@@ -18,7 +18,12 @@ let currentLapEnabled = true;
 let fastestLapEnabled = true;
 let lapFinishEnabled = true;
 let raceFlag = "GREEN"; // Default flag
+let publicUrl = ""; // For QR codes
 const CONFIG_FILE = path.resolve("config.json");
+
+console.log("---------------------------------------------------");
+console.log("---  SERVER STARTING: SPANISH COMMENTS ENABLED  ---");
+console.log("---------------------------------------------------");
 
 // Load config on startup
 try {
@@ -35,7 +40,8 @@ try {
     if (typeof conf.fastestLapEnabled === 'boolean') fastestLapEnabled = conf.fastestLapEnabled;
     if (typeof conf.lapFinishEnabled === 'boolean') lapFinishEnabled = conf.lapFinishEnabled;
     if (conf.raceFlag) raceFlag = conf.raceFlag;
-    console.log("Loaded config:", { speedhiveUrl, overlayEnabled, scrapingEnabled, commentsEnabled, votingWidgetEnabled, overtakesEnabled, currentLapEnabled, fastestLapEnabled, lapFinishEnabled, raceFlag });
+    if (conf.publicUrl) publicUrl = conf.publicUrl;
+    console.log("Loaded config:", { speedhiveUrl, overlayEnabled, scrapingEnabled, commentsEnabled, votingWidgetEnabled, overtakesEnabled, currentLapEnabled, fastestLapEnabled, lapFinishEnabled, raceFlag, publicUrl });
   }
 } catch (e) {
   console.error("Error loading config:", e);
@@ -413,13 +419,66 @@ const SCRAPE_FUNCTION = (wantDebug) => {
       for (const k of keys) out[k] = list.reduce((acc, r) => acc + (r[k] ? 1 : 0), 0);
       return out;
     }
+    // --- PARSING ENGINE (Metadata Extraction Only) ---
+    const PARSING_RULES = [
+      {
+        // "Number 12 is up 3 places to 5"
+        pattern: /(?:Number|No\.?)\s+(\d+)\s+is\s+up\s+(\d+)\s+places?\s+to\s+(\d+)/i,
+        transform: (m) => ({ 
+            kind: "pos_up", 
+            number: parseInt(m[1],10), 
+            delta: parseInt(m[2],10), 
+            toPos: parseInt(m[3],10)
+        })
+      },
+      {
+        // "Number 12 has just dropped to 8"
+        pattern: /(?:Number|No\.?)\s+(\d+)\s+has\s+just\s+dropped\s+to\s+(\d+)/i,
+        transform: (m) => ({
+            kind: "pos_down", 
+            number: parseInt(m[1],10), 
+            toPos: parseInt(m[2],10)
+        })
+      },
+      {
+        // "Here comes Number 12... Number 8"
+        pattern: /Here\s+comes\s+(?:Number|No\.?)\s+(\d+).*(?:Number|No\.?)\s+(\d+)/i,
+        transform: (m) => ({
+            kind: "chase", 
+            number: parseInt(m[1],10), 
+            target: parseInt(m[2],10)
+        })
+      },
+      {
+        // "New best lap for Number 12"
+        pattern: /New\s+best\s+lap\s+for\s+(?:Number|No\.?)\s+(\d+)/i,
+        transform: (m) => ({
+            kind: "best_lap", 
+            number: parseInt(m[1],10)
+        })
+      },
+      {
+        // "Number 12 improved on their best lap with a 1:40.5"
+        pattern: /(?:Number|No\.?)\s+(\d+)\s+improved\s+on\s+their\s+best\s+lap\s+with\s+a\s+([0-9:.]+)/i,
+        transform: (m) => ({
+            kind: "improved_lap", 
+            number: parseInt(m[1],10), 
+            time: m[2]
+        })
+      }
+    ];
+
     function parseAnnouncement(msg) {
-      const m1 = msg.match(/Number\s+(\d+)\s+is up\s+(\d+)\s+places?\s+to\s+(\d+)/i);
-      if (m1) return { kind: "pos_up", number: parseInt(m1[1],10), delta: parseInt(m1[2],10), toPos: parseInt(m1[3],10), text: msg };
-      const m2 = msg.match(/Number\s+(\d+)\s+has just dropped to\s+(\d+)/i);
-      if (m2) return { kind: "pos_down", number: parseInt(m2[1],10), toPos: parseInt(m2[2],10), text: msg };
-      const m4 = msg.match(/Here comes Number\s+(\d+).*Number\s+(\d+)/i);
-      if (m4) return { kind: "chase", number: parseInt(m4[1],10), target: parseInt(m4[2],10), text: msg };
+      // 1. Try exact rules to extract metadata
+      for (const rule of PARSING_RULES) {
+        const m = msg.match(rule.pattern);
+        if (m) {
+            // Return metadata + original text
+            return { text: msg, ...rule.transform(m) };
+        }
+      }
+
+      // 2. Default fallback
       return { kind: "text", text: msg };
     }
     function extractAnnouncements() {
@@ -634,12 +693,12 @@ app.post("/api/flag", requireAuth, (req, res) => {
 });
 
 app.get("/api/config", (_req, res) => {
-  res.json({ speedhiveUrl, overlayEnabled, scrapingEnabled, commentsEnabled, votingWidgetEnabled, overtakesEnabled, currentLapEnabled, fastestLapEnabled, lapFinishEnabled, raceFlag });
+  res.json({ speedhiveUrl, overlayEnabled, scrapingEnabled, commentsEnabled, votingWidgetEnabled, overtakesEnabled, currentLapEnabled, fastestLapEnabled, lapFinishEnabled, raceFlag, publicUrl });
 });
 
 app.post("/api/config", requireAuth, async (req, res) => {
   try {
-    const { speedhiveUrl: nextUrl, overlayEnabled: nextOverlayEnabled, scrapingEnabled: nextScrapingEnabled, commentsEnabled: nextCommentsEnabled, votingWidgetEnabled: nextVotingWidgetEnabled, overtakesEnabled: nextOvertakesEnabled, currentLapEnabled: nextCurrentLapEnabled, fastestLapEnabled: nextFastestLapEnabled, lapFinishEnabled: nextLapFinishEnabled, initialData } = req.body || {};
+    const { speedhiveUrl: nextUrl, overlayEnabled: nextOverlayEnabled, scrapingEnabled: nextScrapingEnabled, commentsEnabled: nextCommentsEnabled, votingWidgetEnabled: nextVotingWidgetEnabled, overtakesEnabled: nextOvertakesEnabled, currentLapEnabled: nextCurrentLapEnabled, fastestLapEnabled: nextFastestLapEnabled, lapFinishEnabled: nextLapFinishEnabled, publicUrl: nextPublicUrl, initialData } = req.body || {};
     
     if (typeof nextUrl === "string" && /^https?:\/\//i.test(nextUrl)) {
       if (nextUrl !== speedhiveUrl) {
@@ -668,14 +727,15 @@ app.post("/api/config", requireAuth, async (req, res) => {
     if (typeof nextCurrentLapEnabled === "boolean") currentLapEnabled = nextCurrentLapEnabled;
     if (typeof nextFastestLapEnabled === "boolean") fastestLapEnabled = nextFastestLapEnabled;
     if (typeof nextLapFinishEnabled === "boolean") lapFinishEnabled = nextLapFinishEnabled;
+    if (typeof nextPublicUrl === "string") publicUrl = nextPublicUrl;
     
     try {
-      fs.writeFileSync(CONFIG_FILE, JSON.stringify({ speedhiveUrl, overlayEnabled, scrapingEnabled, commentsEnabled, votingWidgetEnabled, overtakesEnabled, currentLapEnabled, fastestLapEnabled, lapFinishEnabled }, null, 2));
+      fs.writeFileSync(CONFIG_FILE, JSON.stringify({ speedhiveUrl, overlayEnabled, scrapingEnabled, commentsEnabled, votingWidgetEnabled, overtakesEnabled, currentLapEnabled, fastestLapEnabled, lapFinishEnabled, publicUrl }, null, 2));
     } catch (e) {
       console.error("Error saving config:", e);
     }
     
-    res.json({ ok: true, speedhiveUrl, overlayEnabled, scrapingEnabled, commentsEnabled, votingWidgetEnabled, overtakesEnabled, currentLapEnabled, fastestLapEnabled, lapFinishEnabled });
+    res.json({ ok: true, speedhiveUrl, overlayEnabled, scrapingEnabled, commentsEnabled, votingWidgetEnabled, overtakesEnabled, currentLapEnabled, fastestLapEnabled, lapFinishEnabled, publicUrl });
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }
@@ -731,7 +791,7 @@ async function getVotingStatus() {
       c.percent = totalVotes > 0 ? ((c.votes / totalVotes) * 100).toFixed(1) : 0;
     });
     
-    return { active, voteId, candidates: resultCandidates, totalVotes };
+    return { active, voteId, candidates: resultCandidates, totalVotes, publicUrl };
   } else {
     // Memory implementation
     const totalVotes = Object.values(memoryVoting.votes).reduce((a, b) => a + b, 0);
@@ -743,7 +803,7 @@ async function getVotingStatus() {
         percent: totalVotes > 0 ? ((votes / totalVotes) * 100).toFixed(1) : 0
       };
     });
-    return { active: memoryVoting.active, voteId: memoryVoting.voteId, candidates: resultCandidates, totalVotes };
+    return { active: memoryVoting.active, voteId: memoryVoting.voteId, candidates: resultCandidates, totalVotes, publicUrl };
   }
 }
 
@@ -789,9 +849,35 @@ app.post("/api/voting/start", requireAuth, async (req, res) => {
 app.post("/api/voting/stop", requireAuth, async (req, res) => {
   try {
     if (useRedis) {
+      // Check total votes before stopping
+      const candidatesStr = await redisClient.get('timing_voting:candidates');
+      const candidates = candidatesStr ? JSON.parse(candidatesStr) : [];
+      let totalVotes = 0;
+      for (const c of candidates) {
+         const v = parseInt(await redisClient.get(`timing_voting:count:${c.number}`) || '0', 10);
+         totalVotes += v;
+      }
+
       await redisClient.set('timing_voting:active', 'false');
+      
+      // If no votes, clear candidates to "clean" the state
+      if (totalVotes === 0) {
+         await redisClient.del('timing_voting:candidates');
+         // Clean counts too
+         for (const c of candidates) {
+            await redisClient.del(`timing_voting:count:${c.number}`);
+         }
+      }
+
     } else {
       memoryVoting.active = false;
+      const totalVotes = Object.values(memoryVoting.votes).reduce((a, b) => a + b, 0);
+      
+      // If no votes, clear candidates to "clean" the state
+      if (totalVotes === 0) {
+        memoryVoting.candidates = [];
+        memoryVoting.votes = {};
+      }
     }
     res.json({ ok: true });
   } catch (e) {
@@ -838,6 +924,12 @@ app.get("/grid", (_req, res) => {
   res.sendFile(path.resolve("dist/index.html"));
 });
 app.get("/results", (_req, res) => {
+  res.sendFile(path.resolve("dist/index.html"));
+});
+app.get("/livetiming", (_req, res) => {
+  res.sendFile(path.resolve("dist/index.html"));
+});
+app.get("/voting-overlay", (_req, res) => {
   res.sendFile(path.resolve("dist/index.html"));
 });
 
