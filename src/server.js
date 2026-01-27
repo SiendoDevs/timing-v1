@@ -30,10 +30,11 @@ const redisClient = createClient({
 });
 
 redisClient.on('error', (err) => {
-  console.log('Redis Client Error', err);
-  // Don't set useRedis = false here immediately as it might be a temporary error, 
-  // but if we want to be safe for voting system fallback:
-  // useRedis = false; 
+  // Only log if we expect Redis to be working (useRedis is true)
+  // This prevents spamming the console if Redis is down from the start
+  if (useRedis) {
+    console.error('Redis Client Error', err);
+  }
 });
 
 (async () => {
@@ -42,8 +43,14 @@ redisClient.on('error', (err) => {
     useRedis = true;
     console.log("Redis connected.");
   } catch (e) {
-    console.error("Failed to connect to Redis:", e);
+    console.log("Redis connection failed. Running in memory-only mode.");
     useRedis = false;
+    // Disconnect to stop auto-reconnect attempts and log spam
+    try {
+      await redisClient.disconnect();
+    } catch (disconnectError) {
+      // Ignore disconnect errors
+    }
   }
 })();
 
