@@ -78,9 +78,9 @@ function ResultRow({ r, isEven }) {
     
     return (
         <div className={`flex items-center gap-4 p-3 border-l-2 ${isEven ? "bg-white/[0.02]" : "bg-transparent"} border-transparent hover:bg-white/5 hover:border-[var(--accent)] transition-all group`}>
-            <div className="w-8 font-mono text-center font-bold text-white/50 group-hover:text-white">{pos}</div>
-            <div className="w-10 font-mono text-right font-bold text-[var(--accent)]">#{num}</div>
-            <div className="flex-1 font-bold italic tracking-tight text-lg truncate text-white/90">{name}</div>
+            <div className="w-8 shrink-0 font-mono text-center font-bold text-white/50 group-hover:text-white">{pos}</div>
+            <div className="w-10 shrink-0 font-mono text-right font-bold text-[var(--accent)]">#{num}</div>
+            <div className="flex-1 font-bold italic tracking-tight text-lg text-white/90 leading-tight">{name}</div>
             <div className="font-mono text-sm text-white/60">{r.laps}L</div>
             <div className="font-mono text-sm font-bold text-white text-right min-w-[100px]">{time}</div>
         </div>
@@ -167,8 +167,8 @@ export default function Results() {
              {/* Column 1 */}
              <div className="space-y-1">
                  {col1.length > 0 && <div className="flex text-xs font-bold uppercase tracking-wider text-white/30 px-3 pb-2 border-b border-white/5 mb-2">
-                    <div className="w-8 text-center">Pos</div>
-                    <div className="w-10 text-right">#</div>
+                    <div className="w-8 shrink-0 text-center">Pos</div>
+                    <div className="w-10 shrink-0 text-right">#</div>
                     <div className="flex-1 ml-4">Piloto</div>
                     <div className="mr-4">Vueltas</div>
                     <div className="text-right w-[100px]">Tiempo/Dif</div>
@@ -179,8 +179,8 @@ export default function Results() {
              {/* Column 2 */}
              <div className="space-y-1">
                  {col2.length > 0 && <div className="flex text-xs font-bold uppercase tracking-wider text-white/30 px-3 pb-2 border-b border-white/5 mb-2">
-                    <div className="w-8 text-center">Pos</div>
-                    <div className="w-10 text-right">#</div>
+                    <div className="w-8 shrink-0 text-center">Pos</div>
+                    <div className="w-10 shrink-0 text-right">#</div>
                     <div className="flex-1 ml-4">Piloto</div>
                     <div className="mr-4">Vueltas</div>
                     <div className="text-right w-[100px]">Tiempo/Dif</div>

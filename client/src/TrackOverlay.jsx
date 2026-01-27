@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { MapPin } from "lucide-react";
 
 export default function TrackOverlay() {
   const [circuit, setCircuit] = useState(null);
@@ -46,7 +47,7 @@ export default function TrackOverlay() {
                 <h1 className="text-4xl font-black italic uppercase leading-none">{circuit.name || "Nombre del Circuito"}</h1>
                 {circuit.location && (
                     <div className="flex items-center gap-2 mt-2 text-white/60 font-medium">
-                        <span>📍</span> {circuit.location}
+                        <MapPin className="w-4 h-4 text-[var(--accent)]" /> {circuit.location}
                     </div>
                 )}
               </div>

@@ -527,7 +527,7 @@ function CircuitInfo({ token }) {
              </button>
              <button 
                 onClick={() => setLibraryOpen(true)}
-                className="px-4 py-3 bg-[var(--accent)]/10 text-[var(--accent)] font-bold uppercase italic tracking-wider rounded text-sm hover:bg-[var(--accent)]/20 border border-[var(--accent)]/20 flex items-center gap-2"
+                className="px-4 py-3 bg-[var(--accent)]/10 text-[var(--accent)] font-bold uppercase italic tracking-wider rounded text-sm hover:bg-[var(--accent)]/20 border border-[var(--accent)] flex items-center gap-2"
              >
                 <Library className="w-4 h-4" /> Biblioteca
              </button>
@@ -726,6 +726,9 @@ export default function Dashboard() {
   const [updateDuration, setUpdateDuration] = useState(null);
   const [raceFlag, setRaceFlag] = useState("GREEN");
   const [blackFlagNum, setBlackFlagNum] = useState("");
+  const [mechFlagNum, setMechFlagNum] = useState("");
+  const [penaltyFlagNum, setPenaltyFlagNum] = useState("");
+  const [penaltyFlagTime, setPenaltyFlagTime] = useState("");
   
   const savingRef = useRef(false);
   useEffect(() => { savingRef.current = saving; }, [saving]);
@@ -795,9 +798,18 @@ export default function Dashboard() {
   }, [token]);
 
   useEffect(() => {
-    if (raceFlag && raceFlag.startsWith("BLACK:")) {
-      const parts = raceFlag.split(":");
-      if (parts[1]) setBlackFlagNum(parts[1]);
+    if (raceFlag) {
+        if (raceFlag.startsWith("BLACK:")) {
+            const parts = raceFlag.split(":");
+            if (parts[1]) setBlackFlagNum(parts[1]);
+        } else if (raceFlag.startsWith("MEATBALL:")) {
+            const parts = raceFlag.split(":");
+            if (parts[1]) setMechFlagNum(parts[1]);
+        } else if (raceFlag.startsWith("PENALTY:")) {
+            const parts = raceFlag.split(":");
+            if (parts[1]) setPenaltyFlagNum(parts[1]);
+            if (parts[2]) setPenaltyFlagTime(parts[2]);
+        }
     }
   }, [raceFlag]);
 
@@ -985,7 +997,7 @@ export default function Dashboard() {
         <div className="w-full px-6 py-3 flex items-center gap-6">
           <div className="flex items-center gap-3">
             <div className="w-4 h-4 bg-[var(--accent)] transform -skew-x-12" />
-            <div className="font-black tracking-tighter text-xl text-white italic">STREAMRACE {__APP_VERSION__}</div>
+            <div className="font-black tracking-tighter text-xl text-white italic">STREAMRACE <span className="font-light opacity-80">v{__APP_VERSION__}</span></div>
           </div>
           
           <div className="h-6 w-px bg-white/10" />
@@ -1178,29 +1190,72 @@ export default function Dashboard() {
                <button onClick={() => updateFlag("WHITE")} className={`p-4 rounded font-black text-sm uppercase border transition-all ${raceFlag === "WHITE" ? "bg-white text-black border-transparent shadow-[0_0_15px_rgba(255,255,255,0.4)] animate-pulse" : "bg-white/10 text-white border-white/20 hover:bg-white/20"}`}>
                   BLANCA
                </button>
-               <button onClick={() => updateFlag("RED")} className={`col-span-2 p-4 rounded font-black text-sm uppercase border transition-all ${raceFlag === "RED" ? "bg-red-600 text-white border-transparent shadow-[0_0_15px_rgba(220,38,38,0.4)] animate-pulse" : "bg-red-500/10 text-red-500 border-red-500/20 hover:bg-red-500/20"}`}>
+               <button onClick={() => updateFlag("RED")} className={`p-4 rounded font-black text-sm uppercase border transition-all ${raceFlag === "RED" ? "bg-red-600 text-white border-transparent shadow-[0_0_15px_rgba(220,38,38,0.4)] animate-pulse" : "bg-red-500/10 text-red-500 border-red-500/20 hover:bg-red-500/20"}`}>
                   ROJA
                </button>
-               <button onClick={() => updateFlag("FINISH")} className={`col-span-2 p-4 rounded font-black text-sm uppercase border transition-all ${raceFlag === "FINISH" ? "bg-white text-black border-transparent shadow-[0_0_15px_rgba(255,255,255,0.4)]" : "bg-white/10 text-white border-white/20 hover:bg-white/20"}`}>
-                  FINAL (AJEDREZ)
+               <button onClick={() => updateFlag("FINISH")} className={`p-4 rounded font-black text-sm uppercase border transition-all ${raceFlag === "FINISH" ? "bg-white text-black border-transparent shadow-[0_0_15px_rgba(255,255,255,0.4)]" : "bg-white/10 text-white border-white/20 hover:bg-white/20"}`}>
+                  FINAL
                </button>
 
-               <div className="col-span-2 flex gap-2 pt-2 border-t border-white/5 mt-2">
-                 <input 
-                   value={blackFlagNum}
-                   onChange={(e) => setBlackFlagNum(e.target.value)}
-                   placeholder="#"
-                   className="w-20 bg-black/40 border border-white/20 rounded text-center font-mono font-bold text-white focus:border-[var(--accent)] outline-none"
-                />
-                <button 
-                   onClick={() => {
-                     const target = blackFlagNum ? `BLACK:${blackFlagNum}` : "BLACK";
-                     updateFlag(target);
-                   }} 
-                    className={`flex-1 p-3 rounded font-black text-sm uppercase border transition-all ${raceFlag && raceFlag.startsWith("BLACK") ? "bg-black text-white border-white/50 shadow-[0_0_15px_rgba(255,255,255,0.4)] animate-pulse" : "bg-black/40 text-gray-400 border-white/10 hover:bg-black/60"}`}
-                 >
-                    BANDERA NEGRA
-                 </button>
+               <div className="col-span-2 border-t border-white/5 mt-2 pt-2 space-y-2">
+                 {/* Row 1: Black & Meatball */}
+                 <div className="grid grid-cols-2 gap-2">
+                    {/* BLACK FLAG */}
+                    <div className="flex gap-1">
+                      <input 
+                        value={blackFlagNum}
+                        onChange={(e) => setBlackFlagNum(e.target.value)}
+                        placeholder="#"
+                        className="w-12 bg-black/40 border border-white/20 rounded text-center font-mono font-bold text-white focus:border-[var(--accent)] outline-none text-sm"
+                      />
+                      <button 
+                        onClick={() => updateFlag(blackFlagNum ? `BLACK:${blackFlagNum}` : "BLACK")} 
+                        className={`flex-1 rounded py-3 font-bold text-xs uppercase border transition-all flex items-center justify-center gap-2 ${raceFlag && raceFlag.startsWith("BLACK") ? "bg-black text-white border-white/50 animate-pulse" : "bg-black/40 text-gray-400 border-white/10 hover:bg-black/60"}`}
+                      >
+                        B. NEGRA
+                      </button>
+                    </div>
+
+                    {/* MEATBALL FLAG */}
+                    <div className="flex gap-1">
+                      <input 
+                        value={mechFlagNum}
+                        onChange={(e) => setMechFlagNum(e.target.value)}
+                        placeholder="#"
+                        className="w-12 bg-black/40 border border-white/20 rounded text-center font-mono font-bold text-white focus:border-[var(--accent)] outline-none text-sm"
+                      />
+                      <button 
+                        onClick={() => updateFlag(mechFlagNum ? `MEATBALL:${mechFlagNum}` : "MEATBALL")} 
+                        className={`flex-1 rounded py-3 font-bold text-xs uppercase border transition-all flex items-center justify-center gap-2 relative overflow-hidden ${raceFlag && raceFlag.startsWith("MEATBALL") ? "bg-black text-orange-500 border-orange-500 animate-pulse" : "bg-black/40 text-gray-400 border-white/10 hover:bg-black/60"}`}
+                      >
+                         <div className="w-2 h-2 rounded-full bg-orange-500 border border-black" />
+                         REPARACIÓN
+                      </button>
+                    </div>
+                 </div>
+
+                 {/* Row 2: Penalty */}
+                 <div className="flex gap-1">
+                    <input 
+                       value={penaltyFlagNum}
+                       onChange={(e) => setPenaltyFlagNum(e.target.value)}
+                       placeholder="#"
+                       className="w-12 bg-black/40 border border-white/20 rounded text-center font-mono font-bold text-white focus:border-[var(--accent)] outline-none text-sm"
+                    />
+                    <input 
+                       value={penaltyFlagTime}
+                       onChange={(e) => setPenaltyFlagTime(e.target.value)}
+                       placeholder="+5s"
+                       className="w-14 bg-black/40 border border-white/20 rounded text-center font-mono font-bold text-white focus:border-[var(--accent)] outline-none text-sm"
+                    />
+                    <button 
+                       onClick={() => updateFlag(penaltyFlagNum ? `PENALTY:${penaltyFlagNum}:${penaltyFlagTime || ""}` : "PENALTY")} 
+                       className={`flex-1 py-3 rounded font-black text-xs uppercase border transition-all relative overflow-hidden ${raceFlag && raceFlag.startsWith("PENALTY") ? "text-black border-white animate-pulse" : "bg-black/40 text-gray-400 border-white/10 hover:bg-black/60"}`}
+                       style={raceFlag && raceFlag.startsWith("PENALTY") ? { background: "linear-gradient(135deg, white 50%, black 50%)" } : {}}
+                    >
+                       <span className={raceFlag && raceFlag.startsWith("PENALTY") ? "bg-white/80 px-1 rounded shadow-sm" : ""}>SANCIÓN</span>
+                    </button>
+                 </div>
                </div>
             </div>
           </div>

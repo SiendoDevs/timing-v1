@@ -106,8 +106,9 @@ export default function LiveTiming() {
 
   useEffect(() => {
     if (raceFlag === "GREEN") {
-      const wasBlack = prevRaceFlag.current && String(prevRaceFlag.current).startsWith("BLACK");
-      if (!wasBlack) {
+      const prev = String(prevRaceFlag.current || "");
+      const wasSpecial = prev.startsWith("BLACK") || prev.startsWith("MEATBALL") || prev.startsWith("PENALTY");
+      if (!wasSpecial) {
         setShowGreenBanner(true);
         const t = setTimeout(() => setShowGreenBanner(false), 5000);
         return () => clearTimeout(t);
@@ -121,7 +122,7 @@ export default function LiveTiming() {
   }, [raceFlag]);
 
   useEffect(() => {
-    const limit = limitParam && parseInt(limitParam) > 0 ? parseInt(limitParam) : 15;
+    const limit = limitParam && parseInt(limitParam) > 0 ? parseInt(limitParam) : 10;
     if (rows.length > limit) {
       const t = setInterval(() => {
         setPage(p => {
@@ -554,7 +555,7 @@ export default function LiveTiming() {
   const mountedOverlay = useMount(showOverlay, { from: 0, enter: 1, exit: 0 });
   const mountedLap = useMount(!!activeCard && showOverlay, { from: 0, enter: 1, exit: 0 });
 
-  const limit = limitParam && parseInt(limitParam) > 0 ? parseInt(limitParam) : 15;
+  const limit = limitParam && parseInt(limitParam) > 0 ? parseInt(limitParam) : 10;
   const pageStart = page * limit;
   const visibleRows = rows.slice(pageStart, pageStart + limit);
 
@@ -581,6 +582,23 @@ export default function LiveTiming() {
      activeBanner = { 
         text: num ? `BANDERA NEGRA #${num}` : "BANDERA NEGRA", 
         class: "bg-black text-white shadow-[0_0_20px_rgba(220,38,38,0.5)] animate-pulse" 
+     };
+  } else if (raceFlag && raceFlag.startsWith("MEATBALL")) {
+     const parts = raceFlag.split(":");
+     const num = parts[1] || "";
+     activeBanner = { 
+        text: num ? `REPARACIÓN #${num}` : "REPARACIÓN", 
+        class: "bg-black text-orange-500 shadow-[0_0_20px_rgba(249,115,22,0.5)] animate-pulse",
+        icon: <div className="w-5 h-5 rounded-full bg-orange-500 border-2 border-black ring-1 ring-orange-500 shrink-0" />
+     };
+  } else if (raceFlag && raceFlag.startsWith("PENALTY")) {
+     const parts = raceFlag.split(":");
+     const num = parts[1] || "";
+     const time = parts[2] || "";
+     activeBanner = { 
+        text: `SANCIÓN #${num} ${time ? `(${time})` : ""}`,
+        class: "bg-white text-black shadow-[0_0_20px_rgba(255,255,255,0.5)] animate-pulse",
+        icon: <div className="w-8 h-8 border border-black shadow-sm" style={{ background: "linear-gradient(to bottom right, black 50%, white 50%)" }} />
      };
   } else {
      activeBanner = flagBanners[raceFlag];
@@ -630,8 +648,12 @@ export default function LiveTiming() {
               }`}
             >
                {bannerContent && (
-                 <div className={`w-full py-2 font-black text-center text-xl uppercase tracking-widest ${bannerContent.class} shadow-lg`}>
-                    {bannerContent.text}
+                 <div 
+                    className={`w-full py-2 font-black text-center text-xl uppercase tracking-widest shadow-lg flex items-center justify-center gap-3 ${bannerContent.class}`}
+                    style={bannerContent.style || {}}
+                 >
+                    {bannerContent.icon}
+                    <span className={bannerContent.textClass || ""}>{bannerContent.text}</span>
                  </div>
                )}
             </div>

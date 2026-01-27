@@ -5,6 +5,22 @@ Todas las variaciones notables de este proyecto serán documentadas en este arch
 El formato está basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/),
 y este proyecto se adhiere a [Semantic Versioning](https://semver.org/lang/es/).
 
+## [1.2.4] - 2026-01-27
+### Añadido
+- **Banderas Especiales:** Implementación completa de "Bandera de Reparación" (círculo naranja/negro) y "Sanción" (bandera negra/blanca) con controles de entrada para número y tiempo.
+- **Track Overlay:** Nuevo icono `MapPin` de Lucide para la ubicación del circuito.
+
+### Cambiado
+- **LiveTiming:**
+  - Paginación de pilotos reducida a 10 por página.
+  - Mejora visual en banner de sanciones (sin borde grueso, icono personalizado).
+  - Lógica de bandera verde ajustada para no interrumpir al desactivar banderas especiales.
+- **Dashboard:**
+  - Rediseño compacto de controles de banderas.
+  - Borde de acento añadido al botón "Biblioteca".
+  - Ajuste de peso visual en el número de versión (más fino).
+- **Resultados:** Layout de filas ajustado con anchos fijos para posición/número y salto de línea en nombres largos.
+
 ## [1.2.3] - 2026-01-27
 ### Añadido
 - **Animaciones:** Integración de `framer-motion` en `LiveTiming` para transiciones suaves al reordenar posiciones en la tabla.
