@@ -81,8 +81,8 @@ try {
 }
 
 // --- CIRCUIT INFO ---
-// Circuit info is now handled via Redis in endpoints
-// let circuitInfo = {}; 
+// Circuit info is now handled via Redis in endpoints, but we keep a memory fallback
+let memoryCircuitInfo = {}; 
 
 
 // --- USER MANAGEMENT ---
@@ -800,18 +800,21 @@ app.delete("/api/users/:username", requireAuth, (req, res) => {
 
 app.get("/api/circuit", async (req, res) => {
   try {
-    if (!useRedis) return res.json({});
+    if (!useRedis) return res.json(memoryCircuitInfo);
     const data = await redisClient.get("circuit_info");
     res.json(data ? JSON.parse(data) : {});
   } catch (e) {
     console.error("Redis get error:", e);
-    res.json({}); // Return empty to prevent UI hang
+    res.json(memoryCircuitInfo); // Return memory fallback to prevent UI hang
   }
 });
 
 app.post("/api/circuit", requireAuth, async (req, res) => {
   try {
-    if (!useRedis) return res.status(503).json({ error: "Database unavailable" });
+    if (!useRedis) {
+      memoryCircuitInfo = { ...memoryCircuitInfo, ...req.body };
+      return res.json(memoryCircuitInfo);
+    }
     const currentRaw = await redisClient.get("circuit_info");
     const current = currentRaw ? JSON.parse(currentRaw) : {};
     
