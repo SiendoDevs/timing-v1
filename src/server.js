@@ -830,57 +830,54 @@ app.post("/api/circuit", requireAuth, async (req, res) => {
 
 // --- CIRCUIT LIBRARY ENDPOINTS ---
 
-app.get("/api/circuits", async (req, res) => {
-  const defaults = [
-    {
-      id: "monza-default",
-      name: "Autodromo Nazionale Monza",
-      location: "Monza, Italia",
-      length: "5.793 km",
-      turns: "11",
-      recordTime: "1:18.887",
-      recordDriver: "Lewis Hamilton",
-      recordYear: "2020",
-      mapUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b8/Monza_track_map-2000.svg/1200px-Monza_track_map-2000.svg.png",
-      updatedAt: Date.now()
-    },
-    {
-      id: "interlagos-default",
-      name: "Autódromo José Carlos Pace (Interlagos)",
-      location: "São Paulo, Brasil",
-      length: "4.309 km",
-      turns: "15",
-      recordTime: "1:10.540",
-      recordDriver: "Valtteri Bottas",
-      recordYear: "2018",
-      mapUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/2/20/Interlagos_Circuit.svg/1200px-Interlagos_Circuit.svg.png",
-      updatedAt: Date.now()
-    }
-  ];
+const DEFAULT_CIRCUITS = [
+  {
+    id: "monza-default",
+    name: "Autodromo Nazionale Monza",
+    location: "Monza, Italia",
+    length: "5.793 km",
+    turns: "11",
+    recordTime: "1:18.887",
+    recordDriver: "Lewis Hamilton",
+    recordYear: "2020",
+    mapUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b8/Monza_track_map-2000.svg/1200px-Monza_track_map-2000.svg.png",
+    updatedAt: Date.now()
+  },
+  {
+    id: "interlagos-default",
+    name: "Autódromo José Carlos Pace (Interlagos)",
+    location: "São Paulo, Brasil",
+    length: "4.309 km",
+    turns: "15",
+    recordTime: "1:10.540",
+    recordDriver: "Valtteri Bottas",
+    recordYear: "2018",
+    mapUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/2/20/Interlagos_Circuit.svg/1200px-Interlagos_Circuit.svg.png",
+    updatedAt: Date.now()
+  }
+];
 
+let memoryCircuitLibrary = [...DEFAULT_CIRCUITS];
+
+app.get("/api/circuits", async (req, res) => {
   try {
-    if (!useRedis) return res.json(defaults);
+    if (!useRedis) return res.json(memoryCircuitLibrary);
 
     const data = await redisClient.get("circuit_library");
     if (!data) {
-      await redisClient.set("circuit_library", JSON.stringify(defaults));
-      return res.json(defaults);
+      await redisClient.set("circuit_library", JSON.stringify(DEFAULT_CIRCUITS));
+      return res.json(DEFAULT_CIRCUITS);
     }
     res.json(JSON.parse(data));
   } catch (e) {
     console.error("Redis library get error:", e);
-    res.json(defaults); // Fallback to defaults
+    res.json(memoryCircuitLibrary); // Fallback to memory
   }
 });
 
 app.post("/api/circuits", requireAuth, async (req, res) => {
   try {
-    if (!useRedis) return res.status(503).json({ error: "Database unavailable" });
-
     const { id, name, location, length, turns, recordTime, recordDriver, recordYear, mapUrl } = req.body;
-    
-    const libraryRaw = await redisClient.get("circuit_library");
-    let library = libraryRaw ? JSON.parse(libraryRaw) : [];
     
     const newCircuit = {
       id: id || Date.now().toString(),
@@ -888,6 +885,19 @@ app.post("/api/circuits", requireAuth, async (req, res) => {
       updatedAt: Date.now()
     };
 
+    if (!useRedis) {
+      const existingIndex = memoryCircuitLibrary.findIndex(c => c.id === newCircuit.id);
+      if (existingIndex >= 0) {
+        memoryCircuitLibrary[existingIndex] = newCircuit;
+      } else {
+        memoryCircuitLibrary.push(newCircuit);
+      }
+      return res.json({ ok: true, library: memoryCircuitLibrary });
+    }
+    
+    const libraryRaw = await redisClient.get("circuit_library");
+    let library = libraryRaw ? JSON.parse(libraryRaw) : [];
+    
     const existingIndex = library.findIndex(c => c.id === newCircuit.id);
     if (existingIndex >= 0) {
       library[existingIndex] = newCircuit;
@@ -905,9 +915,18 @@ app.post("/api/circuits", requireAuth, async (req, res) => {
 
 app.delete("/api/circuits/:id", requireAuth, async (req, res) => {
   try {
-    if (!useRedis) return res.status(503).json({ error: "Database unavailable" });
-
     const { id } = req.params;
+
+    if (!useRedis) {
+       const initialLen = memoryCircuitLibrary.length;
+       memoryCircuitLibrary = memoryCircuitLibrary.filter(c => c.id !== id);
+       if (memoryCircuitLibrary.length !== initialLen) {
+         return res.json({ ok: true, library: memoryCircuitLibrary });
+       } else {
+         return res.status(404).json({ error: "Circuito no encontrado" });
+       }
+    }
+
     const libraryRaw = await redisClient.get("circuit_library");
     let library = libraryRaw ? JSON.parse(libraryRaw) : [];
     
