@@ -874,16 +874,41 @@ const DEFAULT_CIRCUITS = [
 
 let memoryCircuitLibrary = [...DEFAULT_CIRCUITS];
 
+// Helper to ensure we always get a valid library array from Redis (with defaults if empty)
+async function getLibraryFromRedis() {
+  const data = await redisClient.get("circuit_library");
+  if (!data) {
+    // If key missing, return defaults (and optionally seed it, but let's just return defaults)
+    // We can seed it here or just let the next write seed it.
+    // For consistency, let's just return defaults.
+    return [...DEFAULT_CIRCUITS];
+  }
+  try {
+    const parsed = JSON.parse(data);
+    return Array.isArray(parsed) ? parsed : [...DEFAULT_CIRCUITS];
+  } catch (e) {
+    console.error("Error parsing circuit library from Redis:", e);
+    return [...DEFAULT_CIRCUITS];
+  }
+}
+
 app.get("/api/circuits", async (req, res) => {
   try {
-    if (!useRedis) return res.json(memoryCircuitLibrary);
+    if (!useRedis) {
+      console.log("GET /api/circuits: Serving from memory (Redis unavailable)");
+      return res.json(memoryCircuitLibrary);
+    }
 
+    const library = await getLibraryFromRedis();
+    
+    // If we fetched defaults because Redis was empty, we should probably save them back 
+    // to ensure persistence if the user adds nothing.
     const data = await redisClient.get("circuit_library");
     if (!data) {
-      await redisClient.set("circuit_library", JSON.stringify(DEFAULT_CIRCUITS));
-      return res.json(DEFAULT_CIRCUITS);
+       await redisClient.set("circuit_library", JSON.stringify(library));
     }
-    res.json(JSON.parse(data));
+
+    res.json(library);
   } catch (e) {
     console.error("Redis library get error:", e);
     res.json(memoryCircuitLibrary); // Fallback to memory
@@ -901,6 +926,7 @@ app.post("/api/circuits", requireAuth, async (req, res) => {
     };
 
     if (!useRedis) {
+      console.log("POST /api/circuits: Saving to memory (Redis unavailable)");
       const existingIndex = memoryCircuitLibrary.findIndex(c => c.id === newCircuit.id);
       if (existingIndex >= 0) {
         memoryCircuitLibrary[existingIndex] = newCircuit;
@@ -910,8 +936,8 @@ app.post("/api/circuits", requireAuth, async (req, res) => {
       return res.json({ ok: true, library: memoryCircuitLibrary });
     }
     
-    const libraryRaw = await redisClient.get("circuit_library");
-    let library = libraryRaw ? JSON.parse(libraryRaw) : [];
+    // Fetch current library using the helper to ensure we don't lose defaults
+    let library = await getLibraryFromRedis();
     
     const existingIndex = library.findIndex(c => c.id === newCircuit.id);
     if (existingIndex >= 0) {
@@ -921,6 +947,7 @@ app.post("/api/circuits", requireAuth, async (req, res) => {
     }
 
     await redisClient.set("circuit_library", JSON.stringify(library));
+    console.log("POST /api/circuits: Saved to Redis. Total circuits:", library.length);
     res.json({ ok: true, library });
   } catch (e) {
     console.error("Redis library save error:", e);
@@ -942,8 +969,7 @@ app.delete("/api/circuits/:id", requireAuth, async (req, res) => {
        }
     }
 
-    const libraryRaw = await redisClient.get("circuit_library");
-    let library = libraryRaw ? JSON.parse(libraryRaw) : [];
+    let library = await getLibraryFromRedis();
     
     const initialLen = library.length;
     library = library.filter(c => c.id !== id);
