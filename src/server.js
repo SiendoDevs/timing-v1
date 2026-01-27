@@ -21,6 +21,31 @@ let raceFlag = "GREEN"; // Default flag
 let publicUrl = ""; // For QR codes
 const CONFIG_FILE = path.resolve("config.json");
 const USERS_FILE = path.resolve("users.json");
+// const CIRCUIT_FILE = path.resolve("circuit.json"); // Replaced by Redis
+
+// --- REDIS CONNECTION ---
+let useRedis = false;
+const redisClient = createClient({
+  url: process.env.REDIS_URL || 'redis://localhost:6379'
+});
+
+redisClient.on('error', (err) => {
+  console.log('Redis Client Error', err);
+  // Don't set useRedis = false here immediately as it might be a temporary error, 
+  // but if we want to be safe for voting system fallback:
+  // useRedis = false; 
+});
+
+(async () => {
+  try {
+    await redisClient.connect();
+    useRedis = true;
+    console.log("Redis connected.");
+  } catch (e) {
+    console.error("Failed to connect to Redis:", e);
+    useRedis = false;
+  }
+})();
 
 console.log("---------------------------------------------------");
 console.log("---  SERVER STARTING: SPANISH COMMENTS ENABLED  ---");
@@ -47,6 +72,11 @@ try {
 } catch (e) {
   console.error("Error loading config:", e);
 }
+
+// --- CIRCUIT INFO ---
+// Circuit info is now handled via Redis in endpoints
+// let circuitInfo = {}; 
+
 
 // --- USER MANAGEMENT ---
 let users = [];
@@ -102,12 +132,36 @@ app.use(express.json({ limit: '50mb' }));
 app.use(cors());
 
 // Auth Middleware
-const requireAuth = (req, res, next) => {
+const requireAuth = async (req, res, next) => {
   const authHeader = req.headers.authorization;
   const token = authHeader && authHeader.split(" ")[1];
-  if (token && sessions.has(token)) {
+  
+  if (!token) {
+    console.log("Auth failed: No token provided");
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  let isValid = false;
+  try {
+    if (useRedis) {
+      const val = await redisClient.get(`session:${token}`);
+      console.log(`Auth check for token ${token.substring(0, 5)}... in Redis:`, !!val);
+      isValid = !!val;
+    } else {
+      isValid = sessions.has(token);
+      console.log(`Auth check for token ${token.substring(0, 5)}... in Memory:`, isValid);
+    }
+  } catch (e) {
+    console.error("Auth middleware error:", e);
+    // Fallback to memory check if Redis fails
+    isValid = sessions.has(token); 
+    console.log(`Auth check fallback for token ${token.substring(0, 5)}... in Memory:`, isValid);
+  }
+
+  if (isValid) {
     next();
   } else {
+    console.log("Auth failed: Invalid token");
     res.status(401).json({ error: "Unauthorized" });
   }
 };
@@ -667,7 +721,7 @@ setInterval(tick, 3000);
 
 // --- ENDPOINTS ---
 
-app.post("/api/login", (req, res) => {
+app.post("/api/login", async (req, res) => {
   const { username, password } = req.body;
 
   // Compatibility with old frontend (only password) -> assume admin
@@ -676,6 +730,9 @@ app.post("/api/login", (req, res) => {
     if (admin && admin.password === password) {
        const token = Math.random().toString(36).substring(2) + Date.now().toString(36);
        sessions.add(token);
+       if (useRedis) {
+         await redisClient.set(`session:${token}`, JSON.stringify({ username: "admin", role: "admin" }), { EX: 86400 * 7 });
+       }
        return res.json({ token, username: "admin", role: "admin" });
     }
     return res.status(401).json({ error: "Invalid password" });
@@ -685,6 +742,9 @@ app.post("/api/login", (req, res) => {
   if (user) {
     const token = Math.random().toString(36).substring(2) + Date.now().toString(36);
     sessions.add(token);
+    if (useRedis) {
+      await redisClient.set(`session:${token}`, JSON.stringify({ username: user.username, role: user.role || "user" }), { EX: 86400 * 7 });
+    }
     res.json({ token, username: user.username, role: user.role || "user" });
   } else {
     res.status(401).json({ error: "Credenciales inválidas" });
@@ -729,10 +789,143 @@ app.delete("/api/users/:username", requireAuth, (req, res) => {
   }
 });
 
-app.post("/api/verify-token", (req, res) => {
+// --- CIRCUIT ENDPOINTS ---
+
+app.get("/api/circuit", async (req, res) => {
+  try {
+    const data = await redisClient.get("circuit_info");
+    res.json(data ? JSON.parse(data) : {});
+  } catch (e) {
+    console.error("Redis get error:", e);
+    res.status(500).json({ error: "Error fetching circuit info" });
+  }
+});
+
+app.post("/api/circuit", requireAuth, async (req, res) => {
+  try {
+    const currentRaw = await redisClient.get("circuit_info");
+    const current = currentRaw ? JSON.parse(currentRaw) : {};
+    
+    const updated = { ...current, ...req.body };
+    await redisClient.set("circuit_info", JSON.stringify(updated));
+    
+    res.json(updated);
+  } catch (e) {
+    console.error("Redis set error:", e);
+    res.status(500).json({ error: "Error saving circuit info" });
+  }
+});
+
+// --- CIRCUIT LIBRARY ENDPOINTS ---
+
+app.get("/api/circuits", async (req, res) => {
+  try {
+    const data = await redisClient.get("circuit_library");
+    if (!data) {
+      const defaults = [
+        {
+          id: "monza-default",
+          name: "Autodromo Nazionale Monza",
+          location: "Monza, Italia",
+          length: "5.793 km",
+          turns: "11",
+          recordTime: "1:18.887",
+          recordDriver: "Lewis Hamilton",
+          recordYear: "2020",
+          mapUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b8/Monza_track_map-2000.svg/1200px-Monza_track_map-2000.svg.png",
+          updatedAt: Date.now()
+        },
+        {
+          id: "interlagos-default",
+          name: "Autódromo José Carlos Pace (Interlagos)",
+          location: "São Paulo, Brasil",
+          length: "4.309 km",
+          turns: "15",
+          recordTime: "1:10.540",
+          recordDriver: "Valtteri Bottas",
+          recordYear: "2018",
+          mapUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/2/20/Interlagos_Circuit.svg/1200px-Interlagos_Circuit.svg.png",
+          updatedAt: Date.now()
+        }
+      ];
+      await redisClient.set("circuit_library", JSON.stringify(defaults));
+      return res.json(defaults);
+    }
+    res.json(JSON.parse(data));
+  } catch (e) {
+    console.error("Redis library get error:", e);
+    res.json([]);
+  }
+});
+
+app.post("/api/circuits", requireAuth, async (req, res) => {
+  try {
+    const { id, name, location, length, turns, recordTime, recordDriver, recordYear, mapUrl } = req.body;
+    
+    const libraryRaw = await redisClient.get("circuit_library");
+    let library = libraryRaw ? JSON.parse(libraryRaw) : [];
+    
+    const newCircuit = {
+      id: id || Date.now().toString(),
+      name, location, length, turns, recordTime, recordDriver, recordYear, mapUrl,
+      updatedAt: Date.now()
+    };
+
+    const existingIndex = library.findIndex(c => c.id === newCircuit.id);
+    if (existingIndex >= 0) {
+      library[existingIndex] = newCircuit;
+    } else {
+      library.push(newCircuit);
+    }
+
+    await redisClient.set("circuit_library", JSON.stringify(library));
+    res.json({ ok: true, library });
+  } catch (e) {
+    console.error("Redis library save error:", e);
+    res.status(500).json({ error: "Error saving to library" });
+  }
+});
+
+app.delete("/api/circuits/:id", requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const libraryRaw = await redisClient.get("circuit_library");
+    let library = libraryRaw ? JSON.parse(libraryRaw) : [];
+    
+    const initialLen = library.length;
+    library = library.filter(c => c.id !== id);
+    
+    if (library.length !== initialLen) {
+      await redisClient.set("circuit_library", JSON.stringify(library));
+      res.json({ ok: true, library });
+    } else {
+      res.status(404).json({ error: "Circuito no encontrado" });
+    }
+  } catch (e) {
+    console.error("Redis library delete error:", e);
+    res.status(500).json({ error: "Error deleting from library" });
+  }
+});
+
+app.post("/api/verify-token", async (req, res) => {
   const authHeader = req.headers.authorization;
   const token = authHeader && authHeader.split(" ")[1];
-  if (token && sessions.has(token)) {
+  
+  if (!token) return res.status(401).json({ valid: false });
+
+  let isValid = false;
+  try {
+    if (useRedis) {
+      const val = await redisClient.get(`session:${token}`);
+      isValid = !!val;
+    } else {
+      isValid = sessions.has(token);
+    }
+  } catch (e) {
+    isValid = sessions.has(token);
+  }
+
+  if (isValid) {
     res.json({ valid: true });
   } else {
     res.status(401).json({ valid: false });
@@ -839,31 +1032,14 @@ app.post("/api/config", requireAuth, async (req, res) => {
 });
 
 // --- VOTING SYSTEM (Redis / In-Memory) ---
-let redisClient = null;
-let useRedis = false;
+// redisClient and useRedis are initialized at the top of the file
+
 let memoryVoting = {
   candidates: [],
   votes: {},
   active: false,
   voteId: ""
 };
-
-// Initialize Redis if URL provided
-(async () => {
-  if (process.env.REDIS_URL) {
-    try {
-      redisClient = createClient({ url: process.env.REDIS_URL });
-      redisClient.on('error', (err) => console.error('Redis Client Error', err));
-      await redisClient.connect();
-      useRedis = true;
-      console.log("Connected to Redis for voting system");
-    } catch (e) {
-      console.error("Failed to connect to Redis, using in-memory voting:", e);
-    }
-  } else {
-    console.log("No REDIS_URL found, using in-memory voting system");
-  }
-})();
 
 // Helper to get voting status
 async function getVotingStatus() {
@@ -1027,6 +1203,9 @@ app.get("/livetiming", (_req, res) => {
   res.sendFile(path.resolve("dist/index.html"));
 });
 app.get("/voting-overlay", (_req, res) => {
+  res.sendFile(path.resolve("dist/index.html"));
+});
+app.get("/track", (_req, res) => {
   res.sendFile(path.resolve("dist/index.html"));
 });
 

@@ -5,6 +5,17 @@ Todas las variaciones notables de este proyecto serán documentadas en este arch
 El formato está basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/),
 y este proyecto se adhiere a [Semantic Versioning](https://semver.org/lang/es/).
 
+## [1.2.0] - 2026-01-26
+### Añadido
+- **Biblioteca de Circuitos:** Nueva funcionalidad para guardar, cargar y eliminar configuraciones de circuitos (nombre, mapa, récords, etc.) con persistencia en Redis.
+- **Acceso Rápido:** Botón "Abrir Overlay" en la sección de Info del Circuito para abrir `/track` en una nueva pestaña.
+- **UI Dashboard:** Integración completa de iconos **Lucide React** (Radio, Tv, Flag, Award, User, ListChecks, etc.) reemplazando todos los emojis para una apariencia profesional y consistente.
+
+### Cambiado
+- **Interfaz de Usuario:** Rediseño de botones de acción, modales y tablas en el Dashboard para usar iconos vectoriales.
+- **Selección de Pilotos:** Reemplazo de marcas de verificación de texto por iconos `<Check />` en la tabla de candidatos.
+- **Backend:** Nuevos endpoints `/api/circuits` para soporte CRUD de la biblioteca.
+
 ## [1.1.0] - 2026-01-26
 ### Añadido
 - **Gestión de Usuarios:** Nuevo sistema multi-usuario con persistencia en archivo local (`users.json`).

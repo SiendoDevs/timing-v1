@@ -5,6 +5,7 @@ import Results from "./Results";
 import VotePage from "./VotePage";
 import VotingOverlay from "./VotingOverlay";
 import LiveTiming from "./LiveTiming";
+import TrackOverlay from "./TrackOverlay";
 import LandingPage from "./LandingPage";
 
 export default function App() {
@@ -17,6 +18,7 @@ export default function App() {
   if (pathname === "/vote") return <VotePage />;
   if (pathname === "/voting-overlay") return <VotingOverlay />;
   if (pathname === "/livetiming") return <LiveTiming />;
+  if (pathname === "/track") return <TrackOverlay />;
 
   return <LandingPage />;
 }

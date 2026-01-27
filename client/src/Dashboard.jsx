@@ -1,5 +1,24 @@
 import React, { useEffect, useState, useRef } from "react";
 import { QRCodeSVG } from "qrcode.react";
+import { 
+  Tv, 
+  Library, 
+  Save, 
+  Trash2, 
+  Map as MapIcon, 
+  Flag, 
+  Timer, 
+  Calendar, 
+  User,
+  Info,
+  X,
+  Radio,
+  Server,
+  Award,
+  ListChecks,
+  Check,
+  Wifi
+} from "lucide-react";
 
 // --- Components ---
 
@@ -77,12 +96,13 @@ function Login({ onLogin }) {
   );
 }
 
-function Input({ label, value, onChange, placeholder }) {
+function Input({ label, value, onChange, placeholder, type = "text" }) {
   return (
     <label className="block w-full">
       <div className="text-xs font-bold uppercase tracking-wider opacity-60 mb-1.5">{label}</div>
       <input
-        value={value}
+        type={type}
+        value={value || ""}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         className="w-full px-4 py-2.5 rounded bg-black/40 border border-white/10 outline-none focus:ring-2 focus:ring-[var(--accent)] focus:border-transparent text-sm font-mono transition-all"
@@ -213,8 +233,12 @@ function UsersManager({ token, onClose }) {
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 text-white">
       <div className="bg-[#141414] border border-white/10 rounded-xl p-6 w-full max-w-md shadow-2xl relative">
-        <button onClick={onClose} className="absolute top-4 right-4 text-white/50 hover:text-white">✕</button>
-        <h2 className="text-xl font-black italic mb-6 uppercase">Gestión de Usuarios</h2>
+        <button onClick={onClose} className="absolute top-4 right-4 text-white/50 hover:text-white">
+          <X className="w-5 h-5" />
+        </button>
+        <h2 className="text-xl font-black italic mb-6 uppercase flex items-center gap-2">
+          <User className="w-6 h-6 text-[var(--accent)]" /> Gestión de Usuarios
+        </h2>
         
         <div className="space-y-4 mb-8 max-h-[40vh] overflow-y-auto pr-2">
           {users.map(u => (
@@ -251,6 +275,337 @@ function UsersManager({ token, onClose }) {
           </button>
         </form>
       </div>
+
+
+
+
+    </div>
+  );
+}
+
+
+
+function CircuitInfo({ token }) {
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState("");
+  
+  const [name, setName] = useState("");
+  const [location, setLocation] = useState("");
+  const [length, setLength] = useState("");
+  const [turns, setTurns] = useState("");
+  const [recordTime, setRecordTime] = useState("");
+  const [recordDriver, setRecordDriver] = useState("");
+  const [recordYear, setRecordYear] = useState("");
+  const [mapUrl, setMapUrl] = useState("");
+
+  // Library State
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  const [libraryCircuits, setLibraryCircuits] = useState([]);
+  const [libraryLoading, setLibraryLoading] = useState(false);
+
+  useEffect(() => {
+    loadCircuit();
+  }, []);
+
+  useEffect(() => {
+    if (libraryOpen) {
+      fetchLibrary();
+    }
+  }, [libraryOpen]);
+
+  async function fetchLibrary() {
+    setLibraryLoading(true);
+    try {
+      const apiOrigin = import.meta.env.VITE_API_URL || "";
+      const res = await fetch(`${apiOrigin}/api/circuits`);
+      if (res.ok) {
+        setLibraryCircuits(await res.json());
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLibraryLoading(false);
+    }
+  }
+
+  async function saveToLibrary() {
+    if (!name) return alert("El nombre del circuito es obligatorio para guardar en la biblioteca.");
+    if (!confirm("¿Guardar este circuito en la biblioteca?")) return;
+    
+    try {
+      const apiOrigin = import.meta.env.VITE_API_URL || "";
+      const res = await fetch(`${apiOrigin}/api/circuits`, {
+        method: "POST",
+        headers: { 
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          name, location, length, turns, recordTime, recordDriver, recordYear, mapUrl
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setLibraryCircuits(data.library);
+        alert("Circuito guardado en biblioteca exitosamente.");
+      } else {
+        alert("Error al guardar en biblioteca.");
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Error de conexión al guardar en biblioteca.");
+    }
+  }
+
+  async function deleteFromLibrary(id, e) {
+    e.stopPropagation();
+    if (!confirm("¿Eliminar este circuito de la biblioteca permanentemente?")) return;
+    try {
+      const apiOrigin = import.meta.env.VITE_API_URL || "";
+      const res = await fetch(`${apiOrigin}/api/circuits/${id}`, {
+        method: "DELETE",
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setLibraryCircuits(data.library);
+      } else {
+        alert("Error al eliminar.");
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Error de conexión al eliminar.");
+    }
+  }
+
+  function loadFromLibrary(c) {
+    if (!confirm(`¿Cargar los datos del circuito "${c.name}"?\nSe reemplazarán los datos actuales no guardados.`)) return;
+    setName(c.name || "");
+    setLocation(c.location || "");
+    setLength(c.length || "");
+    setTurns(c.turns || "");
+    setRecordTime(c.recordTime || "");
+    setRecordDriver(c.recordDriver || "");
+    setRecordYear(c.recordYear || "");
+    setMapUrl(c.mapUrl || "");
+    setLibraryOpen(false);
+    setStatus("Datos cargados desde biblioteca (No olvides 'Guardar Cambios' para aplicar)");
+    setTimeout(() => setStatus(""), 5000);
+  }
+
+  async function loadCircuit() {
+    setLoading(true);
+    try {
+      const apiOrigin = import.meta.env.VITE_API_URL || "";
+      const res = await fetch(`${apiOrigin}/api/circuit`);
+      if (res.ok) {
+        const data = await res.json();
+        setName(data.name || "");
+        setLocation(data.location || "");
+        setLength(data.length || "");
+        setTurns(data.turns || "");
+        setRecordTime(data.recordTime || "");
+        setRecordDriver(data.recordDriver || "");
+        setRecordYear(data.recordYear || "");
+        setMapUrl(data.mapUrl || "");
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function saveCircuit() {
+    setSaving(true);
+    setStatus("");
+    try {
+      const apiOrigin = import.meta.env.VITE_API_URL || "";
+      const res = await fetch(`${apiOrigin}/api/circuit`, {
+        method: "POST",
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          name, location, length, turns, recordTime, recordDriver, recordYear, mapUrl
+        })
+      });
+      
+      if (res.ok) {
+        setStatus("Información guardada correctamente");
+        setTimeout(() => setStatus(""), 3000);
+      } else {
+        setStatus("Error al guardar");
+      }
+    } catch (e) {
+      setStatus("Error de conexión");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (loading) {
+    return <div className="flex-1 flex items-center justify-center text-white/20">Cargando info del circuito...</div>;
+  }
+
+  return (
+    <div className="flex-1 p-6 overflow-y-auto custom-scrollbar">
+      <div className="max-w-4xl mx-auto space-y-6">
+        
+        {/* Header */}
+        <div className="flex items-center justify-between flex-wrap gap-4">
+           <div>
+             <h2 className="text-2xl font-black italic uppercase">Información del Circuito</h2>
+             <p className="text-white/40 text-sm">Gestiona los datos del trazado actual</p>
+           </div>
+           <div className="flex items-center gap-3">
+             <button 
+                onClick={() => window.open("/track", "_blank")}
+                className="px-4 py-3 bg-white/10 text-white font-bold uppercase italic tracking-wider rounded text-sm hover:bg-white/20 border border-white/10 flex items-center gap-2"
+             >
+                <Tv className="w-4 h-4" /> Abrir Overlay
+             </button>
+             <button 
+                onClick={() => setLibraryOpen(true)}
+                className="px-4 py-3 bg-[var(--accent)]/10 text-[var(--accent)] font-bold uppercase italic tracking-wider rounded text-sm hover:bg-[var(--accent)]/20 border border-[var(--accent)]/20 flex items-center gap-2"
+             >
+                <Library className="w-4 h-4" /> Biblioteca
+             </button>
+             <div className="w-48">
+               <ActionButton 
+                 onClick={saveCircuit} 
+                 disabled={saving} 
+                 label={saving ? "Guardando..." : "Guardar Cambios"} 
+                 type="normal"
+                 active={false}
+               />
+             </div>
+           </div>
+        </div>
+
+        {status && (
+          <div className={`p-3 rounded border ${status.includes("Error") ? "bg-red-500/10 border-red-500/20 text-red-400" : "bg-green-500/10 border-green-500/20 text-green-400"} text-sm font-bold text-center`}>
+            {status}
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* General Info */}
+          <div className="bg-[#141414] p-6 rounded-xl border border-white/5 space-y-4">
+            <SectionHeader title="Datos Generales" icon={<Flag className="w-5 h-5 text-[var(--accent)]" />} />
+            <Input label="Nombre del Circuito" value={name} onChange={setName} placeholder="Ej: Autódromo Oscar y Juan Gálvez" />
+            <Input label="Ubicación" value={location} onChange={setLocation} placeholder="Ej: Buenos Aires, Argentina" />
+            <div className="grid grid-cols-2 gap-4">
+              <Input label="Longitud (km/m)" value={length} onChange={setLength} placeholder="Ej: 4.2 km" />
+              <Input label="Curvas" value={turns} onChange={setTurns} placeholder="Ej: 12" />
+            </div>
+          </div>
+
+          {/* Record Info */}
+          <div className="bg-[#141414] p-6 rounded-xl border border-white/5 space-y-4">
+            <SectionHeader title="Récord de Vuelta" icon={<Timer className="w-5 h-5 text-[var(--accent)]" />} />
+            <Input label="Tiempo Récord" value={recordTime} onChange={setRecordTime} placeholder="Ej: 1:32.456" />
+            <Input label="Piloto" value={recordDriver} onChange={setRecordDriver} placeholder="Ej: Juan Manuel Fangio" />
+            <Input label="Año" value={recordYear} onChange={setRecordYear} placeholder="Ej: 2023" />
+          </div>
+
+          {/* Map / Image */}
+          <div className="col-span-1 md:col-span-2 bg-[#141414] p-6 rounded-xl border border-white/5 space-y-4">
+            <SectionHeader title="Mapa del Circuito" icon={<MapIcon className="w-5 h-5 text-[var(--accent)]" />} />
+            <div className="flex gap-4">
+               <div className="flex-1">
+                 <Input label="URL de la Imagen" value={mapUrl} onChange={setMapUrl} placeholder="https://..." />
+               </div>
+               <div className="flex items-end">
+                  <button 
+                    onClick={saveToLibrary}
+                    className="px-4 py-2.5 bg-white/5 border border-white/10 hover:bg-white/10 text-white font-bold uppercase text-xs rounded transition-colors whitespace-nowrap flex items-center gap-2"
+                    title="Guardar configuración actual en biblioteca"
+                  >
+                    <Save className="w-4 h-4" /> Guardar en Biblioteca
+                  </button>
+               </div>
+            </div>
+            {mapUrl && (
+              <div className="mt-4 bg-black/40 rounded-lg p-2 border border-white/10 flex justify-center">
+                <img src={mapUrl} alt="Mapa Circuito" className="max-h-64 object-contain opacity-80" onError={(e) => e.target.style.display = 'none'} />
+              </div>
+            )}
+          </div>
+        </div>
+
+      </div>
+
+      {/* Library Modal */}
+      {libraryOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#141414] border border-white/10 rounded-xl w-full max-w-2xl shadow-2xl flex flex-col max-h-[80vh]">
+            <div className="p-5 border-b border-white/10 flex items-center justify-between bg-white/5">
+              <h3 className="text-xl font-black italic uppercase flex items-center gap-2">
+                <Library className="w-6 h-6 text-[var(--accent)]" /> Biblioteca de Circuitos
+              </h3>
+              <button onClick={() => setLibraryOpen(false)} className="text-white/50 hover:text-white transition-colors">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            
+            <div className="p-4 overflow-y-auto custom-scrollbar flex-1 space-y-3">
+              {libraryLoading && <div className="text-center text-white/30 py-4">Cargando biblioteca...</div>}
+              
+              {!libraryLoading && libraryCircuits.length === 0 && (
+                <div className="text-center text-white/30 py-8 border border-dashed border-white/10 rounded-lg">
+                  La biblioteca está vacía.<br/>Guarda el circuito actual para verlo aquí.
+                </div>
+              )}
+
+              {libraryCircuits.map(c => (
+                <div 
+                  key={c.id} 
+                  onClick={() => loadFromLibrary(c)}
+                  className="group flex items-center justify-between p-4 bg-black/40 border border-white/5 hover:border-[var(--accent)] hover:bg-white/5 rounded-lg cursor-pointer transition-all"
+                >
+                  <div className="flex items-center gap-4">
+                    {c.mapUrl ? (
+                      <img src={c.mapUrl} alt="" className="w-16 h-16 object-cover rounded bg-black/50" onError={e => e.target.style.display = 'none'} />
+                    ) : (
+                      <div className="w-16 h-16 bg-white/5 rounded flex items-center justify-center text-2xl">
+                        <Flag className="w-8 h-8 text-white/20" />
+                      </div>
+                    )}
+                    <div>
+                      <div className="font-bold text-lg text-white group-hover:text-[var(--accent)]">{c.name}</div>
+                      <div className="text-xs text-white/50 font-mono flex flex-wrap gap-2 mt-1">
+                        {c.location && <span className="flex items-center gap-1"><MapIcon className="w-3 h-3" /> {c.location}</span>}
+                        {c.length && <span className="flex items-center gap-1"><Flag className="w-3 h-3" /> {c.length}</span>}
+                        {c.turns && <span className="flex items-center gap-1"><Info className="w-3 h-3" /> {c.turns} curvas</span>}
+                      </div>
+                      {(c.recordTime || c.recordDriver) && (
+                        <div className="text-xs text-[var(--accent)]/70 mt-1 flex items-center gap-1">
+                           <Timer className="w-3 h-3" /> {c.recordTime} ({c.recordDriver})
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <button 
+                    onClick={(e) => deleteFromLibrary(c.id, e)}
+                    className="p-2 text-white/20 hover:text-red-500 hover:bg-red-500/10 rounded transition-colors"
+                    title="Eliminar de biblioteca"
+                  >
+                    <Trash2 className="w-5 h-5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+            
+            <div className="p-4 border-t border-white/10 bg-black/20 text-center text-xs text-white/30">
+              Selecciona un circuito para cargar sus datos.
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
@@ -259,6 +614,7 @@ export default function Dashboard() {
   // Auth State
   const [token, setToken] = useState(() => localStorage.getItem("admin_token"));
   const [showUsers, setShowUsers] = useState(false);
+  const [activeTab, setActiveTab] = useState("dashboard");
   
   // State
   const [url, setUrl] = useState("");
@@ -533,6 +889,32 @@ export default function Dashboard() {
           </div>
           
           <div className="h-6 w-px bg-white/10" />
+
+          {/* Navigation */}
+          <nav className="flex items-center gap-1 bg-white/5 p-1 rounded-lg">
+            <button
+              onClick={() => setActiveTab("dashboard")}
+              className={`px-4 py-1.5 rounded-md text-sm font-bold uppercase transition-all ${
+                activeTab === "dashboard"
+                  ? "bg-[var(--accent)] text-black shadow-lg"
+                  : "text-white/60 hover:text-white hover:bg-white/5"
+              }`}
+            >
+              Dashboard
+            </button>
+            <button
+              onClick={() => setActiveTab("circuit")}
+              className={`px-4 py-1.5 rounded-md text-sm font-bold uppercase transition-all ${
+                activeTab === "circuit"
+                  ? "bg-[var(--accent)] text-black shadow-lg"
+                  : "text-white/60 hover:text-white hover:bg-white/5"
+              }`}
+            >
+              Info Circuito
+            </button>
+          </nav>
+          
+          <div className="h-6 w-px bg-white/10" />
           
           <div className="flex items-center gap-3">
              {sessionName ? (
@@ -570,6 +952,7 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {activeTab === "dashboard" ? (
       <div className="flex-1 p-4 grid grid-cols-12 gap-4 min-h-0">
         
         {/* Left Column: Config (3 cols) */}
@@ -577,7 +960,7 @@ export default function Dashboard() {
           
           {/* Connection Card */}
           <div className="bg-[#141414] rounded-xl border border-white/5 overflow-hidden shadow-2xl shrink-0">
-            <SectionHeader title="Fuente de Datos" icon="📡" status={status} />
+            <SectionHeader title="Fuente de Datos" icon={<Radio className="w-5 h-5 text-[var(--accent)]" />} status={status} />
             <div className="p-4 space-y-4">
               <Input
                 label="Speedhive URL"
@@ -600,7 +983,7 @@ export default function Dashboard() {
 
           {/* Visibility Controls */}
           <div className="bg-[#141414] rounded-xl border border-white/5 overflow-hidden shadow-2xl shrink-0">
-            <SectionHeader title="Transmisión" icon="📺" />
+            <SectionHeader title="Transmisión" icon={<Tv className="w-5 h-5 text-[var(--accent)]" />} />
             <div className="p-4 space-y-2">
               <div className="flex items-center justify-between p-2.5 rounded bg-white/5 border border-white/5">
                 <div className="font-bold text-xs uppercase">Overlay Principal</div>
@@ -675,7 +1058,7 @@ export default function Dashboard() {
           
           {/* Race Flags */}
           <div className="bg-[#141414] rounded-xl border border-white/5 overflow-hidden shadow-2xl shrink-0">
-            <SectionHeader title="Banderas" icon="🚩" />
+            <SectionHeader title="Banderas" icon={<Flag className="w-5 h-5 text-[var(--accent)]" />} />
             <div className="p-4 grid grid-cols-2 gap-2">
                <button onClick={() => updateFlag("GREEN")} className={`p-4 rounded font-black text-sm uppercase border transition-all ${raceFlag === "GREEN" ? "bg-green-500 text-black border-transparent shadow-[0_0_15px_rgba(34,197,94,0.4)]" : "bg-green-500/10 text-green-500 border-green-500/20 hover:bg-green-500/20"}`}>
                   VERDE
@@ -725,7 +1108,7 @@ export default function Dashboard() {
           {/* Voting Manager */}
           <div className="bg-[#141414] rounded-xl border border-white/5 overflow-hidden shadow-2xl flex flex-col shrink-0">
              <div className="bg-white/[0.02] flex flex-col">
-                <SectionHeader title="Piloto Destacado" icon="🗳️" />
+                <SectionHeader title="Piloto Destacado" icon={<Award className="w-5 h-5 text-[var(--accent)]" />} />
                 <div className="p-6 flex-1 flex flex-col">
                   {!votingActive ? (
                     <div className="flex flex-col gap-6">
@@ -742,7 +1125,9 @@ export default function Dashboard() {
                                 <span key={c.number} onClick={() => toggleCandidate(c)} className="cursor-pointer group relative px-3 py-1.5 bg-white/10 rounded-md border border-white/10 hover:bg-red-500/20 hover:border-red-500/30 transition-all">
                                    <span className="font-bold text-[var(--accent)] mr-2">#{c.number}</span>
                                    <span className="font-medium text-sm">{c.name}</span>
-                                   <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full text-[10px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">✕</span>
+                                   <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full text-[10px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                      <X className="w-3 h-3 text-white" />
+                                   </span>
                                 </span>
                               ))}
                            </div>
@@ -823,7 +1208,7 @@ export default function Dashboard() {
 
         {/* Right Column: Data Table (5 cols) */}
         <div className="col-span-12 xl:col-span-5 flex flex-col bg-[#141414] rounded-xl border border-white/5 overflow-hidden shadow-2xl min-h-0">
-          <SectionHeader title="Selección de Candidatos" icon="📋" />
+          <SectionHeader title="Selección de Candidatos" icon={<ListChecks className="w-5 h-5 text-[var(--accent)]" />} />
           <div className="flex-1 overflow-auto custom-scrollbar">
             {/* Quick Selection Toolbar */}
             <div className="sticky top-0 z-20 bg-[#1a1a1a] border-b border-white/5 p-2 flex gap-2 overflow-x-auto">
@@ -868,10 +1253,10 @@ export default function Dashboard() {
                        className={`group cursor-pointer transition-colors hover:bg-white/5 ${isSelected ? "bg-green-500/10" : ""}`}
                      >
                        <td className="p-3 text-center">
-                         <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${isSelected ? "bg-green-500 border-green-500 text-black" : "border-white/20 group-hover:border-white/40"}`}>
-                           {isSelected && <span className="text-[10px]">✓</span>}
-                         </div>
-                       </td>
+                        <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${isSelected ? "bg-green-500 border-green-500 text-black" : "border-white/20 group-hover:border-white/40"}`}>
+                          {isSelected && <Check className="w-3 h-3" />}
+                        </div>
+                      </td>
                        <td className="p-3 font-mono font-bold text-sm">{r.position}</td>
                        <td className="p-3 font-mono text-[var(--accent)] font-bold text-sm">#{r.number}</td>
                        <td className="p-3 font-bold text-sm">{r.name}</td>
@@ -892,6 +1277,9 @@ export default function Dashboard() {
         </div>
 
       </div>
+      ) : (
+        <CircuitInfo token={token} />
+      )}
       {showUsers && <UsersManager token={token} onClose={() => setShowUsers(false)} />}
     </div>
   );
