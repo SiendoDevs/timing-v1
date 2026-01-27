@@ -17,6 +17,13 @@ y este proyecto se adhiere a [Semantic Versioning](https://semver.org/lang/es/).
   - Añadidos botones explícitos "Nuevo" y "Copia" para mejor gestión.
   - Mensajes de confirmación para guardar/actualizar.
 
+### Refactorización
+- **Modularización Masiva:** Se ha dividido el monolito `Dashboard.jsx` y otros componentes grandes en archivos más pequeños y mantenibles:
+  - **Componentes UI:** `Input`, `ActionButton`, `SectionHeader`, `StatusBadge`.
+  - **Dashboard:** `CircuitInfo`, `Login`, `UsersManager`.
+  - **LiveTiming:** `TimingRow`, `FlagBanner`, `LapPopup`.
+  - **Utils:** Extracción de funciones de formateo a `utils/formatting.js`.
+
 ## [1.2.4] - 2026-01-27
 ### Añadido
 - **Banderas Especiales:** Implementación completa de "Bandera de Reparación" (círculo naranja/negro) y "Sanción" (bandera negra/blanca) con controles de entrada para número y tiempo.
