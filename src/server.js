@@ -845,32 +845,7 @@ app.post("/api/circuit", requireAuth, async (req, res) => {
 
 // --- CIRCUIT LIBRARY ENDPOINTS ---
 
-const DEFAULT_CIRCUITS = [
-  {
-    id: "monza-default",
-    name: "Autodromo Nazionale Monza",
-    location: "Monza, Italia",
-    length: "5.793 km",
-    turns: "11",
-    recordTime: "1:18.887",
-    recordDriver: "Lewis Hamilton",
-    recordYear: "2020",
-    mapUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b8/Monza_track_map-2000.svg/1200px-Monza_track_map-2000.svg.png",
-    updatedAt: Date.now()
-  },
-  {
-    id: "interlagos-default",
-    name: "Autódromo José Carlos Pace (Interlagos)",
-    location: "São Paulo, Brasil",
-    length: "4.309 km",
-    turns: "15",
-    recordTime: "1:10.540",
-    recordDriver: "Valtteri Bottas",
-    recordYear: "2018",
-    mapUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/2/20/Interlagos_Circuit.svg/1200px-Interlagos_Circuit.svg.png",
-    updatedAt: Date.now()
-  }
-];
+const DEFAULT_CIRCUITS = [];
 
 let memoryCircuitLibrary = [...DEFAULT_CIRCUITS];
 
