@@ -42,6 +42,12 @@ if (REDIS_URL.includes('redis-cli')) {
   }
 }
 
+// Auto-fix for Upstash: They require TLS (rediss://) but often provide redis:// in CLI strings
+if (REDIS_URL.includes('upstash.io') && REDIS_URL.startsWith('redis://')) {
+  console.log("Detected Upstash URL with non-TLS protocol. Upgrading to rediss://...");
+  REDIS_URL = REDIS_URL.replace('redis://', 'rediss://');
+}
+
 console.log("Using REDIS_URL:", REDIS_URL.replace(/:[^:@]+@/, ':***@')); // Debug log
 
 // Configure Redis client safely
