@@ -585,12 +585,12 @@ export default function Dashboard() {
                 onChange={setUrl}
                 placeholder="https://speedhive.mylaps.com/..."
               />
-              <Input
+              {/* <Input
                 label="URL Pública de Votación (Opcional)"
                 value={publicUrl}
                 onChange={setPublicUrl}
                 placeholder="https://tudominio.com (para QR)"
-              />
+              /> */}
               <div className="grid grid-cols-2 gap-3">
                  <ActionButton onClick={() => saveConfig()} disabled={saving} label="Guardar" type="normal" />
                  <ActionButton onClick={probar} label="Probar" type="link" />
