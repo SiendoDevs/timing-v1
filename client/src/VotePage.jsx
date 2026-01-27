@@ -9,6 +9,7 @@ export default function VotePage() {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [currentVoteId, setCurrentVoteId] = useState("");
+  const [logoUrl, setLogoUrl] = useState("");
 
   // Load voting status
   useEffect(() => {
@@ -16,6 +17,16 @@ export default function VotePage() {
     async function load() {
       try {
         const apiOrigin = import.meta.env.VITE_API_URL || "";
+        
+        // Load config for logo
+        try {
+            const configRes = await fetch(`${apiOrigin}/api/config`);
+            if (configRes.ok) {
+                const configData = await configRes.json();
+                setLogoUrl(configData.logoUrl || "");
+            }
+        } catch {}
+
         const res = await fetch(`${apiOrigin}/api/voting/status`);
         const data = await res.json();
         
@@ -85,7 +96,12 @@ export default function VotePage() {
 
   if (status === "closed") {
     return (
-      <div className="min-h-screen bg-neutral-950 text-white flex flex-col items-center justify-center p-6 text-center">
+      <div className="min-h-screen bg-neutral-950 text-white flex flex-col items-center justify-center p-6 text-center relative">
+        {logoUrl && (
+            <div className="absolute top-6 right-6">
+                <img src={logoUrl} alt="Logo" className="w-16 h-16 object-contain" />
+            </div>
+        )}
         <Award className="w-16 h-16 text-[var(--accent)] mb-4 opacity-50" />
         <h1 className="text-2xl font-bold mb-2">Votación Cerrada</h1>
         <p className="text-neutral-400">La votación para el Piloto Destacado no está activa en este momento.</p>
@@ -95,7 +111,12 @@ export default function VotePage() {
 
   if (voted) {
     return (
-      <div className="min-h-screen bg-neutral-950 text-white flex flex-col items-center justify-center p-6 text-center">
+      <div className="min-h-screen bg-neutral-950 text-white flex flex-col items-center justify-center p-6 text-center relative">
+        {logoUrl && (
+            <div className="absolute top-6 right-6">
+                <img src={logoUrl} alt="Logo" className="w-16 h-16 object-contain" />
+            </div>
+        )}
         <CheckCircle2 className="w-20 h-20 text-green-500 mb-6" />
         <h1 className="text-3xl font-bold mb-2">¡Voto Registrado!</h1>
         <p className="text-neutral-400 mb-8">Gracias por participar en la elección del Piloto Destacado.</p>
@@ -123,7 +144,12 @@ export default function VotePage() {
   }
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-white p-6">
+    <div className="min-h-screen bg-neutral-950 text-white p-6 relative">
+      {logoUrl && (
+          <div className="absolute top-6 right-6">
+              <img src={logoUrl} alt="Logo" className="w-16 h-16 object-contain" />
+          </div>
+      )}
       <header className="mb-8 text-center">
         <h1 className="text-3xl font-black text-amber-500 mb-2 uppercase tracking-tight">Piloto Destacado</h1>
         <p className="text-neutral-400 text-sm">Selecciona a tu piloto favorito para votar.</p>

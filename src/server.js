@@ -46,13 +46,14 @@ if (!cloudinaryConfigured) {
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 1024 * 1024, // 1MB limit
+    fileSize: 5 * 1024 * 1024, // 5MB limit
   },
   fileFilter: (req, file, cb) => {
-    if (file.mimetype === "image/png") {
+    const allowedTypes = ["image/png", "image/jpeg", "image/webp", "image/svg+xml"];
+    if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error("Only PNG images are allowed"), false);
+      cb(new Error("Only PNG, JPEG, WEBP, and SVG images are allowed"), false);
     }
   },
 });
@@ -68,8 +69,22 @@ let fastestLapEnabled = true;
 let lapFinishEnabled = true;
 let raceFlag = "GREEN"; // Default flag
 let publicUrl = ""; // For QR codes
-const CONFIG_FILE = path.resolve("config.json");
-const USERS_FILE = path.resolve("users.json");
+let weather = null; // Weather config { name, lat, lng, country, admin1 }
+let logoUrl = ""; // Logo URL
+
+const DATA_DIR = process.env.DATA_DIR || ".";
+if (DATA_DIR !== "." && !fs.existsSync(DATA_DIR)) {
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    console.log(`Created DATA_DIR: ${DATA_DIR}`);
+  } catch (e) {
+    console.error(`Error creating DATA_DIR ${DATA_DIR}:`, e);
+  }
+}
+
+const CONFIG_FILE = path.resolve(DATA_DIR, "config.json");
+const USERS_FILE = path.resolve(DATA_DIR, "users.json");
+const UPLOADS_DIR = path.resolve(DATA_DIR, "uploads");
 // const CIRCUIT_FILE = path.resolve("circuit.json"); // Replaced by Redis
 
 // --- REDIS CONNECTION ---
@@ -172,7 +187,8 @@ try {
     if (typeof conf.lapFinishEnabled === 'boolean') lapFinishEnabled = conf.lapFinishEnabled;
     if (conf.raceFlag) raceFlag = conf.raceFlag;
     if (conf.publicUrl) publicUrl = conf.publicUrl;
-    console.log("Loaded config:", { speedhiveUrl, overlayEnabled, scrapingEnabled, commentsEnabled, votingWidgetEnabled, overtakesEnabled, currentLapEnabled, fastestLapEnabled, lapFinishEnabled, raceFlag, publicUrl });
+    if (conf.weather) weather = conf.weather;
+    console.log("Loaded config:", { speedhiveUrl, overlayEnabled, scrapingEnabled, commentsEnabled, votingWidgetEnabled, overtakesEnabled, currentLapEnabled, fastestLapEnabled, lapFinishEnabled, raceFlag, publicUrl, weather });
   }
 } catch (e) {
   console.error("Error loading config:", e);
@@ -278,6 +294,7 @@ app.use("/api", (req, res, next) => {
   next();
 });
 app.use(express.static("dist"));
+app.use("/uploads", express.static(UPLOADS_DIR));
 
 // --- STATE MANAGEMENT ---
 let lastData = { standings: [], sessionName: "", sessionLaps: "", flagFinish: false, announcements: [], updatedAt: 0 };
@@ -1044,64 +1061,170 @@ app.delete("/api/circuits/:id", requireAuth, async (req, res) => {
   }
 });
 
+// --- LOGO LIBRARY HELPERS & ENDPOINTS ---
+
+async function getLogoLibraryFromRedis() {
+  if (!useRedis) return []; // Fallback empty if no redis
+  const data = await redisClient.get("logo_library");
+  if (!data) return [];
+  try {
+    const parsed = JSON.parse(data);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) {
+    console.error("Error parsing logo library from Redis:", e);
+    return [];
+  }
+}
+
+app.get("/api/logos", async (req, res) => {
+  try {
+    if (useRedis) {
+        const library = await getLogoLibraryFromRedis();
+        res.json(library);
+    } else {
+        res.json([]); // Local storage fallback not fully implemented for listing
+    }
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+app.delete("/api/logos/:id", requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (useRedis) {
+        let library = await getLogoLibraryFromRedis();
+        const initialLen = library.length;
+        // ID is stored as number in upload but sent as string in URL
+        library = library.filter(l => String(l.id) !== id);
+        
+        if (library.length !== initialLen) {
+            await redisClient.set("logo_library", JSON.stringify(library));
+            res.json({ ok: true, library });
+        } else {
+            res.status(404).json({ error: "Logo not found" });
+        }
+    } else {
+        res.json({ ok: true, library: [] });
+    }
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
 // --- UPLOAD ENDPOINT ---
 
 app.post("/api/upload", requireAuth, upload.single("image"), async (req, res) => {
-  if (!cloudinaryConfigured) {
-    return res.status(503).json({ error: "Cloudinary not configured" });
-  }
-
   if (!req.file) {
     return res.status(400).json({ error: "No image file provided" });
   }
 
-  try {
-    const bufferToStream = (buffer) => {
-      const readable = new Readable({
-        read() {
-          this.push(buffer);
-          this.push(null);
-        }
-      });
-      return readable;
-    };
-
-    const uploadStream = (buffer) => {
-      return new Promise((resolve, reject) => {
-        const stream = cloudinary.uploader.upload_stream(
-          { 
-            folder: "circuit_maps", 
-            resource_type: "image",
-            // Explicitly disable async to ensure we get the result immediately
-            async: false 
-          },
-          (error, result) => {
-            if (error) return reject(error);
-            resolve(result);
+  if (cloudinaryConfigured) {
+    try {
+      const bufferToStream = (buffer) => {
+        const readable = new Readable({
+          read() {
+            this.push(buffer);
+            this.push(null);
           }
-        );
-        bufferToStream(buffer).pipe(stream);
-      });
-    };
+        });
+        return readable;
+      };
 
-    const result = await uploadStream(req.file.buffer);
+      const uploadStream = (buffer) => {
+        return new Promise((resolve, reject) => {
+          const stream = cloudinary.uploader.upload_stream(
+            { 
+              folder: "circuit_maps", 
+              resource_type: "image",
+              // Explicitly disable async to ensure we get the result immediately
+              async: false 
+            },
+            (error, result) => {
+              if (error) return reject(error);
+              resolve(result);
+            }
+          );
+          bufferToStream(buffer).pipe(stream);
+        });
+      };
 
-    console.log("Cloudinary Stream Result:", result);
-    
-    // Fallback to 'url' if 'secure_url' is missing
-    let finalUrl = result.secure_url || result.url;
+      const result = await uploadStream(req.file.buffer);
 
-    if (!finalUrl) {
-      if (result.status === 'pending') {
-         throw new Error("Cloudinary returned 'pending' status. This usually means the account has strict moderation or async settings enabled. Please check Cloudinary settings.");
+      console.log("Cloudinary Stream Result:", result);
+      
+      // Fallback to 'url' if 'secure_url' is missing
+      let finalUrl = result.secure_url || result.url;
+
+      if (!finalUrl) {
+        if (result.status === 'pending') {
+           throw new Error("Cloudinary returned 'pending' status. This usually means the account has strict moderation or async settings enabled. Please check Cloudinary settings.");
+        }
+        throw new Error("Cloudinary response missing URL. Result: " + JSON.stringify(result));
       }
-      throw new Error("Cloudinary response missing URL. Result: " + JSON.stringify(result));
+      
+      // Add to logo library if Redis is available (Shared for Cloudinary)
+      if (useRedis) {
+        try {
+          const library = await getLogoLibraryFromRedis();
+          // Avoid duplicates by URL
+          if (!library.find(l => l.url === finalUrl)) {
+             library.push({ 
+                id: Date.now(), 
+                url: finalUrl, 
+                title: req.body.title || "Logo " + (library.length + 1), // Use provided title or fallback
+                date: new Date() 
+             });
+             await redisClient.set("logo_library", JSON.stringify(library));
+          }
+        } catch (err) {
+          console.error("Error saving to logo library:", err);
+        }
+      }
+      
+      res.json({ url: finalUrl });
+    } catch (e) {
+      console.error("Cloudinary upload error:", e);
+      res.status(500).json({ error: "Upload failed: " + e.message });
     }
-    
-    res.json({ url: finalUrl });
-  } catch (e) {
-    console.error("Cloudinary upload error:", e);
-    res.status(500).json({ error: "Upload failed: " + e.message });
+  } else {
+    // Local storage fallback
+    try {
+      const fileName = `${Date.now()}_${req.file.originalname.replace(/\s+/g, '_')}`;
+      const filePath = path.resolve(UPLOADS_DIR, fileName);
+      
+      // Ensure uploads dir exists
+      if (!fs.existsSync(UPLOADS_DIR)) {
+         fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+      }
+
+      fs.writeFileSync(filePath, req.file.buffer);
+      
+      const finalUrl = `/uploads/${fileName}`;
+
+      // Add to logo library if Redis is available
+      if (useRedis) {
+        try {
+          const library = await getLogoLibraryFromRedis();
+          if (!library.find(l => l.url === finalUrl)) {
+             library.push({ 
+                id: Date.now(), 
+                url: finalUrl, 
+                title: req.body.title || "Logo " + (library.length + 1), // Use provided title or fallback
+                date: new Date() 
+             });
+             await redisClient.set("logo_library", JSON.stringify(library));
+          }
+        } catch (err) {
+          console.error("Error saving to logo library:", err);
+        }
+      }
+      
+      res.json({ url: finalUrl });
+    } catch (e) {
+      console.error("Local upload error:", e);
+      res.status(500).json({ error: "Local upload failed: " + e.message });
+    }
   }
 });
 
@@ -1181,12 +1304,12 @@ app.post("/api/flag", requireAuth, (req, res) => {
 });
 
 app.get("/api/config", (_req, res) => {
-  res.json({ speedhiveUrl, overlayEnabled, scrapingEnabled, commentsEnabled, votingWidgetEnabled, overtakesEnabled, currentLapEnabled, fastestLapEnabled, lapFinishEnabled, raceFlag, publicUrl });
+  res.json({ speedhiveUrl, overlayEnabled, scrapingEnabled, commentsEnabled, votingWidgetEnabled, overtakesEnabled, currentLapEnabled, fastestLapEnabled, lapFinishEnabled, raceFlag, publicUrl, weather, logoUrl });
 });
 
 app.post("/api/config", requireAuth, async (req, res) => {
   try {
-    const { speedhiveUrl: nextUrl, overlayEnabled: nextOverlayEnabled, scrapingEnabled: nextScrapingEnabled, commentsEnabled: nextCommentsEnabled, votingWidgetEnabled: nextVotingWidgetEnabled, overtakesEnabled: nextOvertakesEnabled, currentLapEnabled: nextCurrentLapEnabled, fastestLapEnabled: nextFastestLapEnabled, lapFinishEnabled: nextLapFinishEnabled, publicUrl: nextPublicUrl, initialData } = req.body || {};
+    const { speedhiveUrl: nextUrl, overlayEnabled: nextOverlayEnabled, scrapingEnabled: nextScrapingEnabled, commentsEnabled: nextCommentsEnabled, votingWidgetEnabled: nextVotingWidgetEnabled, overtakesEnabled: nextOvertakesEnabled, currentLapEnabled: nextCurrentLapEnabled, fastestLapEnabled: nextFastestLapEnabled, lapFinishEnabled: nextLapFinishEnabled, publicUrl: nextPublicUrl, weather: nextWeather, logoUrl: nextLogoUrl, initialData } = req.body || {};
     
     if (typeof nextUrl === "string" && /^https?:\/\//i.test(nextUrl)) {
       if (nextUrl !== speedhiveUrl) {
@@ -1216,14 +1339,16 @@ app.post("/api/config", requireAuth, async (req, res) => {
     if (typeof nextFastestLapEnabled === "boolean") fastestLapEnabled = nextFastestLapEnabled;
     if (typeof nextLapFinishEnabled === "boolean") lapFinishEnabled = nextLapFinishEnabled;
     if (typeof nextPublicUrl === "string") publicUrl = nextPublicUrl;
+    if (nextWeather !== undefined) weather = nextWeather;
+    if (typeof nextLogoUrl === "string") logoUrl = nextLogoUrl;
     
     try {
-      fs.writeFileSync(CONFIG_FILE, JSON.stringify({ speedhiveUrl, overlayEnabled, scrapingEnabled, commentsEnabled, votingWidgetEnabled, overtakesEnabled, currentLapEnabled, fastestLapEnabled, lapFinishEnabled, publicUrl }, null, 2));
+      fs.writeFileSync(CONFIG_FILE, JSON.stringify({ speedhiveUrl, overlayEnabled, scrapingEnabled, commentsEnabled, votingWidgetEnabled, overtakesEnabled, currentLapEnabled, fastestLapEnabled, lapFinishEnabled, publicUrl, weather, logoUrl }, null, 2));
     } catch (e) {
       console.error("Error saving config:", e);
     }
     
-    res.json({ ok: true, speedhiveUrl, overlayEnabled, scrapingEnabled, commentsEnabled, votingWidgetEnabled, overtakesEnabled, currentLapEnabled, fastestLapEnabled, lapFinishEnabled, publicUrl });
+    res.json({ ok: true, speedhiveUrl, overlayEnabled, scrapingEnabled, commentsEnabled, votingWidgetEnabled, overtakesEnabled, currentLapEnabled, fastestLapEnabled, lapFinishEnabled, publicUrl, weather, logoUrl });
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }

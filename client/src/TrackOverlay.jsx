@@ -3,9 +3,11 @@ import { MapPin } from "lucide-react";
 
 export default function TrackOverlay() {
   const [circuit, setCircuit] = useState(null);
+  const [logoUrl, setLogoUrl] = useState("");
 
   useEffect(() => {
     const apiOrigin = import.meta.env.VITE_API_URL || "";
+    
     const fetchCircuit = async () => {
       try {
         const res = await fetch(`${apiOrigin}/api/circuit`);
@@ -18,9 +20,25 @@ export default function TrackOverlay() {
       }
     };
 
+    const fetchConfig = async () => {
+      try {
+        const res = await fetch(`${apiOrigin}/api/config`);
+        if (res.ok) {
+           const data = await res.json();
+           setLogoUrl(data.logoUrl || "");
+        }
+      } catch (e) {}
+    };
+
     fetchCircuit();
+    fetchConfig();
+    
     // Poll occasionally in case it updates live
-    const interval = setInterval(fetchCircuit, 5000);
+    const interval = setInterval(() => {
+        fetchCircuit();
+        fetchConfig();
+    }, 5000);
+    
     return () => clearInterval(interval);
   }, []);
 
@@ -31,6 +49,11 @@ export default function TrackOverlay() {
 
   return (
     <div className="min-h-screen bg-transparent p-10 font-sans text-white flex items-center justify-center">
+      {logoUrl && (
+        <div className="fixed top-0 right-6 z-[9999] w-48 h-24 pointer-events-none flex items-center justify-end">
+          <img src={logoUrl} alt="Logo" className="max-w-full max-h-full object-contain drop-shadow-lg" />
+        </div>
+      )}
       <div className="w-[800px] bg-black/95 rounded-2xl overflow-hidden shadow-[0_0_30px_rgba(0,0,0,0.8)] border border-white/20 animate-in fade-in zoom-in duration-500 flex flex-col relative">
         
         {/* Header Strip */}

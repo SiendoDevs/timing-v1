@@ -18,7 +18,8 @@ import {
   ListChecks,
   Check,
   Wifi,
-  Upload as UploadIcon
+  Upload as UploadIcon,
+  CloudSun
 } from "lucide-react";
 
 import Input from "./components/ui/Input";
@@ -26,7 +27,9 @@ import SectionHeader from "./components/ui/SectionHeader";
 import ActionButton from "./components/ui/ActionButton";
 import Login from "./components/dashboard/Login";
 import UsersManager from "./components/dashboard/UsersManager";
-import CircuitInfo from "./components/dashboard/CircuitInfo";
+import CircuitInfo from "./components/dashboard/CircuitInfo.jsx";
+import WeatherPanel from "./components/weather/WeatherPanel.jsx";
+import ConfigPanel from "./components/dashboard/ConfigPanel.jsx";
 
 export default function Dashboard() {
   // Auth State
@@ -58,6 +61,7 @@ export default function Dashboard() {
   const [mechFlagNum, setMechFlagNum] = useState("");
   const [penaltyFlagNum, setPenaltyFlagNum] = useState("");
   const [penaltyFlagTime, setPenaltyFlagTime] = useState("");
+  const [logoUrl, setLogoUrl] = useState("");
   
   const savingRef = useRef(false);
   useEffect(() => { savingRef.current = saving; }, [saving]);
@@ -166,6 +170,7 @@ export default function Dashboard() {
     setFastestLapEnabled(data.fastestLapEnabled !== false);
     setLapFinishEnabled(data.lapFinishEnabled !== false);
     if (data.raceFlag) setRaceFlag(data.raceFlag);
+    if (data.logoUrl) setLogoUrl(data.logoUrl);
   }
 
   async function saveConfig(updates = {}) {
@@ -187,6 +192,7 @@ export default function Dashboard() {
         fastestLapEnabled,
         lapFinishEnabled,
         initialData,
+        logoUrl,
         ...updates 
       };
 
@@ -216,6 +222,7 @@ export default function Dashboard() {
       if (updates.currentLapEnabled !== undefined) setCurrentLapEnabled(data.currentLapEnabled);
       if (updates.fastestLapEnabled !== undefined) setFastestLapEnabled(data.fastestLapEnabled);
       if (updates.lapFinishEnabled !== undefined) setLapFinishEnabled(data.lapFinishEnabled);
+      if (updates.logoUrl !== undefined) setLogoUrl(data.logoUrl);
       
       setStatus("Configuración guardada");
     } catch (e) {
@@ -335,7 +342,7 @@ export default function Dashboard() {
           <nav className="flex items-center gap-1 bg-white/5 p-1 rounded-lg">
             <button
               onClick={() => setActiveTab("dashboard")}
-              className={`px-4 py-1.5 rounded-md text-sm font-bold uppercase transition-all ${
+              className={`px-4 py-1.5 rounded-md text-xs font-bold uppercase transition-all ${
                 activeTab === "dashboard"
                   ? "bg-[var(--accent)] text-black shadow-lg"
                   : "text-white/60 hover:text-white hover:bg-white/5"
@@ -345,13 +352,33 @@ export default function Dashboard() {
             </button>
             <button
               onClick={() => setActiveTab("circuit")}
-              className={`px-4 py-1.5 rounded-md text-sm font-bold uppercase transition-all ${
+              className={`px-4 py-1.5 rounded-md text-xs font-bold uppercase transition-all ${
                 activeTab === "circuit"
                   ? "bg-[var(--accent)] text-black shadow-lg"
                   : "text-white/60 hover:text-white hover:bg-white/5"
               }`}
             >
-              Info Circuito
+              Circuito
+            </button>
+            <button
+              onClick={() => setActiveTab("weather")}
+              className={`px-4 py-1.5 rounded-md text-xs font-bold uppercase transition-all ${
+                activeTab === "weather"
+                  ? "bg-[var(--accent)] text-black shadow-lg"
+                  : "text-white/60 hover:text-white hover:bg-white/5"
+              }`}
+            >
+              Clima
+            </button>
+            <button
+              onClick={() => setActiveTab("config")}
+              className={`px-4 py-1.5 rounded-md text-xs font-bold uppercase transition-all ${
+                activeTab === "config"
+                  ? "bg-[var(--accent)] text-black shadow-lg"
+                  : "text-white/60 hover:text-white hover:bg-white/5"
+              }`}
+            >
+              Config
             </button>
           </nav>
           
@@ -389,113 +416,46 @@ export default function Dashboard() {
                 LATENCIA: {updateDuration || 0}ms
              </div>
              {lastUpdated && <div className="text-white/40">{new Date(lastUpdated).toLocaleTimeString()}</div>}
+             {logoUrl && <img src={logoUrl} className="h-6 w-auto ml-4 object-contain max-w-[150px]" alt="Logo" />}
           </div>
         </div>
       </div>
 
-      {activeTab === "dashboard" ? (
+      {activeTab === "dashboard" && (
       <div className="flex-1 p-4 grid grid-cols-12 gap-4 min-h-0">
         
-        {/* Left Column: Config (3 cols) */}
-        <div className="col-span-12 xl:col-span-3 flex flex-col gap-4 overflow-y-auto pr-1 custom-scrollbar">
-          
-          {/* Connection Card */}
-          <div className="bg-[#141414] rounded-xl border border-white/5 overflow-hidden shadow-2xl shrink-0">
-            <SectionHeader title="Fuente de Datos" icon={<Radio className="w-5 h-5 text-[var(--accent)]" />} status={status} />
-            <div className="p-4 space-y-4">
-              <Input
-                label="Speedhive URL"
-                value={url}
-                onChange={setUrl}
-                placeholder="https://speedhive.mylaps.com/..."
-              />
-              {/* <Input
-                label="URL Pública de Votación (Opcional)"
-                value={publicUrl}
-                onChange={setPublicUrl}
-                placeholder="https://tudominio.com (para QR)"
-              /> */}
-              <div className="grid grid-cols-2 gap-3">
-                 <ActionButton onClick={() => saveConfig()} disabled={saving} label="Guardar" type="normal" />
-                 <ActionButton onClick={probar} label="Probar" type="link" />
-              </div>
-            </div>
-          </div>
-
-          {/* Visibility Controls */}
-          <div className="bg-[#141414] rounded-xl border border-white/5 overflow-hidden shadow-2xl shrink-0">
+        {/* Left Column: Configuration (2 cols) */}
+        <div className="col-span-12 xl:col-span-2 flex flex-col gap-4 overflow-y-auto pr-1 custom-scrollbar">
+           {/* Visibility Controls */}
+          <div className="bg-[#141414] rounded-xl border border-white/5 overflow-hidden shadow-2xl h-fit">
             <SectionHeader title="Transmisión" icon={<Tv className="w-5 h-5 text-[var(--accent)]" />} />
             <div className="p-4 space-y-2">
-              <div className="flex items-center justify-between p-2.5 rounded bg-white/5 border border-white/5">
-                <div className="font-bold text-xs uppercase">Overlay Principal</div>
-                <button onClick={() => saveConfig({ overlayEnabled: !overlayEnabled })} className={`w-10 h-5 rounded-full transition-colors relative ${overlayEnabled ? "bg-green-500" : "bg-white/10"}`}>
-                   <div className={`absolute top-1 left-1 w-3 h-3 bg-white rounded-full transition-transform ${overlayEnabled ? "translate-x-5" : ""}`} />
-                </button>
-              </div>
-              
-              <div className="flex items-center justify-between p-2.5 rounded bg-white/5 border border-white/5">
-                <div className="font-bold text-xs uppercase">Comentarios AI</div>
-                <button onClick={() => saveConfig({ commentsEnabled: !commentsEnabled })} className={`w-10 h-5 rounded-full transition-colors relative ${commentsEnabled ? "bg-green-500" : "bg-white/10"}`}>
-                    <div className={`absolute top-1 left-1 w-3 h-3 bg-white rounded-full transition-transform ${commentsEnabled ? "translate-x-5" : ""}`} />
-                </button>
-              </div>
+                <ToggleRow label="Overlay Principal" checked={overlayEnabled} onChange={() => saveConfig({ overlayEnabled: !overlayEnabled })} />
+                <ToggleRow label="Comentarios AI" checked={commentsEnabled} onChange={() => saveConfig({ commentsEnabled: !commentsEnabled })} />
+                <ToggleRow label="Widget Votación" checked={votingWidgetEnabled} onChange={() => saveConfig({ votingWidgetEnabled: !votingWidgetEnabled })} />
+                <ToggleRow label="Vueltas" checked={currentLapEnabled} onChange={() => saveConfig({ currentLapEnabled: !currentLapEnabled })} />
+                <ToggleRow label="Adelantamientos" checked={overtakesEnabled} onChange={() => saveConfig({ overtakesEnabled: !overtakesEnabled })} />
+                <ToggleRow label="Récord de Vuelta" checked={fastestLapEnabled} onChange={() => saveConfig({ fastestLapEnabled: !fastestLapEnabled })} />
+                <ToggleRow label="Final de Vuelta" checked={lapFinishEnabled} onChange={() => saveConfig({ lapFinishEnabled: !lapFinishEnabled })} />
 
-              <div className="flex items-center justify-between p-2.5 rounded bg-white/5 border border-white/5">
-                <div className="font-bold text-xs uppercase">Widget Votación</div>
-                <button onClick={() => saveConfig({ votingWidgetEnabled: !votingWidgetEnabled })} className={`w-10 h-5 rounded-full transition-colors relative ${votingWidgetEnabled ? "bg-green-500" : "bg-white/10"}`}>
-                    <div className={`absolute top-1 left-1 w-3 h-3 bg-white rounded-full transition-transform ${votingWidgetEnabled ? "translate-x-5" : ""}`} />
-                </button>
-              </div>
-
-              <div className="flex items-center justify-between p-2.5 rounded bg-white/5 border border-white/5">
-                <div className="font-bold text-xs uppercase">Vueltas</div>
-                <button onClick={() => saveConfig({ currentLapEnabled: !currentLapEnabled })} className={`w-10 h-5 rounded-full transition-colors relative ${currentLapEnabled ? "bg-green-500" : "bg-white/10"}`}>
-                    <div className={`absolute top-1 left-1 w-3 h-3 bg-white rounded-full transition-transform ${currentLapEnabled ? "translate-x-5" : ""}`} />
-                </button>
-              </div>
-
-              <div className="flex items-center justify-between p-2.5 rounded bg-white/5 border border-white/5">
-                <div className="font-bold text-xs uppercase">Adelantamientos</div>
-                <button onClick={() => saveConfig({ overtakesEnabled: !overtakesEnabled })} className={`w-10 h-5 rounded-full transition-colors relative ${overtakesEnabled ? "bg-green-500" : "bg-white/10"}`}>
-                    <div className={`absolute top-1 left-1 w-3 h-3 bg-white rounded-full transition-transform ${overtakesEnabled ? "translate-x-5" : ""}`} />
-                </button>
-              </div>
-
-              <div className="flex items-center justify-between p-2.5 rounded bg-white/5 border border-white/5">
-                <div className="font-bold text-xs uppercase">Récord de Vuelta</div>
-                <button onClick={() => saveConfig({ fastestLapEnabled: !fastestLapEnabled })} className={`w-10 h-5 rounded-full transition-colors relative ${fastestLapEnabled ? "bg-green-500" : "bg-white/10"}`}>
-                    <div className={`absolute top-1 left-1 w-3 h-3 bg-white rounded-full transition-transform ${fastestLapEnabled ? "translate-x-5" : ""}`} />
-                </button>
-              </div>
-
-              <div className="flex items-center justify-between p-2.5 rounded bg-white/5 border border-white/5">
-                <div className="font-bold text-xs uppercase">Final de Vuelta</div>
-                <button onClick={() => saveConfig({ lapFinishEnabled: !lapFinishEnabled })} className={`w-10 h-5 rounded-full transition-colors relative ${lapFinishEnabled ? "bg-green-500" : "bg-white/10"}`}>
-                    <div className={`absolute top-1 left-1 w-3 h-3 bg-white rounded-full transition-transform ${lapFinishEnabled ? "translate-x-5" : ""}`} />
-                </button>
-              </div>
-
-              <div className="pt-2 border-t border-white/5">
-                 <div className="font-bold text-[10px] text-white/40 uppercase mb-2 text-center">Overlays</div>
-                 <div className="grid grid-cols-3 gap-2">
-                   <button onClick={() => window.open("/livetiming", "_blank")} className="px-2 py-2 text-[10px] font-bold uppercase bg-white/5 hover:bg-white/10 rounded border border-white/5 text-center">Timing</button>
-                   <button onClick={() => window.open("/grid", "_blank")} className="px-2 py-2 text-[10px] font-bold uppercase bg-white/5 hover:bg-white/10 rounded border border-white/5 text-center">Grid</button>
-                   <button onClick={() => window.open("/results", "_blank")} className="px-2 py-2 text-[10px] font-bold uppercase bg-white/5 hover:bg-white/10 rounded border border-white/5 text-center">Results</button>
-                 </div>
-              </div>
-              
-              <div className="mt-4 text-center">
+                <div className="pt-2 border-t border-white/5 mt-2">
+                    <div className="font-bold text-[10px] text-white/40 uppercase mb-2 text-center">Overlays</div>
+                    <div className="grid grid-cols-3 gap-2">
+                    <button onClick={() => window.open("/livetiming", "_blank")} className="px-2 py-2 text-[10px] font-bold uppercase bg-white/5 hover:bg-white/10 rounded border border-white/5 text-center">Timing</button>
+                    <button onClick={() => window.open("/grid", "_blank")} className="px-2 py-2 text-[10px] font-bold uppercase bg-white/5 hover:bg-white/10 rounded border border-white/5 text-center">Grid</button>
+                    <button onClick={() => window.open("/results", "_blank")} className="px-2 py-2 text-[10px] font-bold uppercase bg-white/5 hover:bg-white/10 rounded border border-white/5 text-center">Results</button>
+                    </div>
+                </div>
+                
+                <div className="mt-4 text-center">
                 <span className="text-[10px] font-mono text-white/20">v{__APP_VERSION__}</span>
-              </div>
+                </div>
             </div>
           </div>
-
-
-
         </div>
 
-        {/* Center Column: Race Control (4 cols) */}
-        <div className="col-span-12 xl:col-span-4 flex flex-col gap-4 overflow-y-auto pr-1 custom-scrollbar">
+        {/* Center Column: Race Control (5 cols) */}
+        <div className="col-span-12 xl:col-span-5 flex flex-col gap-4 overflow-y-auto pr-1 custom-scrollbar">
           
           {/* Race Flags */}
           <div className="bg-[#141414] rounded-xl border border-white/5 overflow-hidden shadow-2xl shrink-0">
@@ -761,10 +721,44 @@ export default function Dashboard() {
         </div>
 
       </div>
-      ) : (
-        <CircuitInfo token={token} />
+      )}
+
+      {activeTab === "circuit" && <CircuitInfo token={token} />}
+      {activeTab === "weather" && <WeatherPanel token={token} />}
+      {activeTab === "config" && (
+        <ConfigPanel 
+          url={url}
+          setUrl={setUrl}
+          publicUrl={publicUrl}
+          setPublicUrl={setPublicUrl}
+          status={status}
+          saving={saving}
+          saveConfig={saveConfig}
+          probar={probar}
+          overlayEnabled={overlayEnabled}
+          commentsEnabled={commentsEnabled}
+          votingWidgetEnabled={votingWidgetEnabled}
+          overtakesEnabled={overtakesEnabled}
+          currentLapEnabled={currentLapEnabled}
+          fastestLapEnabled={fastestLapEnabled}
+          lapFinishEnabled={lapFinishEnabled}
+          scrapingEnabled={scrapingEnabled}
+          logoUrl={logoUrl}
+          setLogoUrl={setLogoUrl}
+        />
       )}
       {showUsers && <UsersManager token={token} onClose={() => setShowUsers(false)} />}
+    </div>
+  );
+}
+
+function ToggleRow({ label, checked, onChange }) {
+  return (
+    <div className="flex items-center justify-between p-2.5 rounded bg-white/5 border border-white/5">
+    <div className="font-bold text-xs uppercase">{label}</div>
+    <button onClick={onChange} className={`w-10 h-5 rounded-full transition-colors relative ${checked ? "bg-green-500" : "bg-white/10"}`}>
+        <div className={`absolute top-1 left-1 w-3 h-3 bg-white rounded-full transition-transform ${checked ? "translate-x-5" : ""}`} />
+    </button>
     </div>
   );
 }

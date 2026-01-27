@@ -24,8 +24,8 @@ export default function VotingWidget() {
     return () => clearInterval(interval);
   }, []);
 
-  // Sort and take top 3
-  const sorted = [...(data.candidates || [])].sort((a,b) => b.votes - a.votes).slice(0, 3);
+  // Sort and take top 10
+  const sorted = [...(data.candidates || [])].sort((a,b) => b.votes - a.votes).slice(0, 10);
   const voteUrl = data.publicUrl ? `${data.publicUrl.replace(/\/$/, "")}/vote` : `${window.location.origin}/vote`;
   
   const isFinished = !data.active && data.candidates && data.candidates.length > 0 && data.totalVotes > 0;
@@ -85,14 +85,14 @@ export default function VotingWidget() {
       </div>
       
       <div className="p-5">
-        <div className="space-y-4 mb-5">
+        <div className="space-y-3 mb-5">
           {sorted.map(c => (
-             <div key={c.number} className="text-sm">
-                <div className="flex justify-between text-white/90 font-bold mb-1 uppercase italic">
+             <div key={c.number} className="text-xs">
+                <div className="flex justify-between text-white/90 font-bold mb-0.5 uppercase italic">
                    <span className="truncate pr-2">{c.name}</span>
                    <span className="tabular-nums text-[var(--accent)]">{c.percent}%</span>
                 </div>
-                <div className="h-2 bg-white/10 rounded-full overflow-hidden">
+                <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
                    <div className="h-full bg-[var(--accent)] transition-all duration-500" style={{ width: `${c.percent}%` }} />
                 </div>
              </div>

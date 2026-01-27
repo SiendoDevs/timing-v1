@@ -93,6 +93,7 @@ export default function Results() {
   const [title, setTitle] = useState("Resultados");
   const [rows, setRows] = useState([]);
   const [page, setPage] = useState(0);
+  const [logoUrl, setLogoUrl] = useState("");
   
   // Settings
   const pageSize = (limitParam && parseInt(limitParam) > 0) ? parseInt(limitParam) : 10; // Podium + 10 pilots per page
@@ -112,7 +113,24 @@ export default function Results() {
     }
     load();
     const t = setInterval(load, 1000);
-    return () => { alive = false; clearInterval(t); };
+
+    async function loadConfig() {
+      try {
+        const res = await fetch("/api/config");
+        if (res.ok) {
+           const data = await res.json();
+           setLogoUrl(data.logoUrl || "");
+        }
+      } catch {}
+    }
+    loadConfig();
+    const t2 = setInterval(loadConfig, 5000);
+
+    return () => { 
+      alive = false; 
+      clearInterval(t); 
+      clearInterval(t2);
+    };
   }, []);
 
   // Pagination logic
@@ -141,6 +159,11 @@ export default function Results() {
 
   return (
     <div className="min-h-screen bg-animated-orange text-gray-200 font-sans selection:bg-[var(--accent)] selection:text-black overflow-hidden flex flex-col relative">
+      {logoUrl && (
+        <div className="fixed top-0 right-6 z-[9999] w-48 h-24 pointer-events-none flex items-center justify-end">
+          <img src={logoUrl} alt="Logo" className="max-w-full max-h-full object-contain drop-shadow-lg" />
+        </div>
+      )}
       <div className="bg-lines-container">
         <div className="bg-line-glow medium"></div>
         <div className="bg-line-glow thick"></div>

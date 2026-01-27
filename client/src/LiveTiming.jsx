@@ -8,6 +8,7 @@ import VotingWidget from "./VotingWidget";
 import FlagBanner from "./components/livetiming/FlagBanner";
 import LapPopup from "./components/livetiming/LapPopup";
 import TimingRow from "./components/livetiming/TimingRow";
+import WeatherWidget from "./components/weather/WeatherWidget.jsx";
 import { 
   safe, 
   surname, 
@@ -42,6 +43,10 @@ export default function LiveTiming() {
   const [showCurrentLap, setShowCurrentLap] = useState(true);
   const [showFastestLap, setShowFastestLap] = useState(true);
   const [showLapFinish, setShowLapFinish] = useState(true);
+  const [logoUrl, setLogoUrl] = useState("");
+
+  const [weatherConfig, setWeatherConfig] = useState(null);
+  const [weatherData, setWeatherData] = useState(null);
 
   const [activeCard, setActiveCard] = useState(null); 
   const eventQueue = useRef([]);
@@ -452,6 +457,8 @@ export default function LiveTiming() {
                 setShowCurrentLap(data.currentLapEnabled !== false);
                 setShowFastestLap(data.fastestLapEnabled !== false);
                 setShowLapFinish(data.lapFinishEnabled !== false);
+                setLogoUrl(data.logoUrl || "");
+                setWeatherConfig(data.weather);
             }
         }
       } catch {}
@@ -467,6 +474,29 @@ export default function LiveTiming() {
       if (timerId) clearTimeout(timerId);
     };
   }, []);
+
+  useEffect(() => {
+    if (!weatherConfig || !weatherConfig.enabled || !weatherConfig.lat) {
+      setWeatherData(null);
+      return;
+    }
+
+    async function fetchWeather() {
+      try {
+        const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${weatherConfig.lat}&longitude=${weatherConfig.lng}&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m,is_day,cloud_cover&timezone=auto`);
+        if (res.ok) {
+           const data = await res.json();
+           setWeatherData(data);
+        }
+      } catch (e) {
+         console.error(e);
+      }
+    }
+
+    fetchWeather();
+    const interval = setInterval(fetchWeather, 300000); // 5 mins
+    return () => clearInterval(interval);
+  }, [weatherConfig?.lat, weatherConfig?.lng, weatherConfig?.enabled]);
 
   const fi = fastestIndex(rows);
   let bestOver = null;
@@ -497,6 +527,11 @@ export default function LiveTiming() {
 
   return (
     <div>
+      {logoUrl && (
+        <div className="fixed top-0 right-6 z-[9999] w-48 h-24 pointer-events-none flex items-center justify-end">
+          <img src={logoUrl} alt="Logo" className="max-w-full max-h-full object-contain drop-shadow-lg" />
+        </div>
+      )}
       {mountedOverlay((a) => (
         <animate.div
           style={{
@@ -580,6 +615,13 @@ export default function LiveTiming() {
       {showVotingWidget && (
          <div className="fixed top-[150px] right-[calc(var(--overlay-m)*1px)] z-50">
             <VotingWidget />
+         </div>
+      )}
+
+      {/* Weather Widget */}
+      {weatherConfig?.enabled && weatherData && (
+         <div className="fixed top-[calc(var(--overlay-m)*1px)] right-[20%] z-50 transform scale-90 origin-top-right">
+            <WeatherWidget data={weatherData} locationName={weatherConfig.name} />
          </div>
       )}
 

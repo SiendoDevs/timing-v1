@@ -6,7 +6,19 @@ El formato está basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1
 y este proyecto se adhiere a [Semantic Versioning](https://semver.org/lang/es/).
 
 ## [1.2.5] - 2026-01-27
+### Añadido
+- **Clima:**
+  - Nueva pestaña "Clima" en el Dashboard.
+  - Widget modular con búsqueda de ubicaciones (Open-Meteo API).
+  - Previsualización en tiempo real y persistencia de la configuración de clima.
+  - Integración en LiveTiming (esquina superior derecha) con opción de activar/desactivar desde el Dashboard.
+  - Estimación de temperatura de pista basada en datos climáticos (viento, nubosidad, día/noche) con alternancia automática en el widget.
+  - Mejoras de legibilidad en iconos de viento y humedad.
+
 ### Cambiado
+- **Voting Widget:**
+  - Aumentado el límite de visualización de 3 a 10 pilotos.
+  - Ajuste de estilos (tamaño compacto) para acomodar más candidatos sin saturar la pantalla.
 - **Circuit Info:**
   - Optimización de diseño para eliminar scroll vertical (ancho completo, espaciado reducido).
   - Nueva distribución en 3 columnas para pantallas grandes.

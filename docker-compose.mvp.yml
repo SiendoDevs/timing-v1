@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  # --- Cliente A (Puerto 3001) ---
+  client-a-redis:
+    image: redis:alpine
+    container_name: client-a-redis
+    volumes:
+      - client_a_redis_data:/data
+    restart: always
+
+  client-a-app:
+    build: .
+    container_name: client-a-app
+    ports:
+      - "3001:3000"
+    environment:
+      - PORT=3000
+      - DATA_DIR=data
+      - REDIS_URL=redis://client-a-redis:6379
+      - NODE_ENV=production
+    volumes:
+      - client_a_data:/usr/src/app/data
+    depends_on:
+      - client-a-redis
+    restart: always
+
+  # --- Cliente B (Puerto 3002) ---
+  client-b-redis:
+    image: redis:alpine
+    container_name: client-b-redis
+    volumes:
+      - client_b_redis_data:/data
+    restart: always
+
+  client-b-app:
+    build: .
+    container_name: client-b-app
+    ports:
+      - "3002:3000"
+    environment:
+      - PORT=3000
+      - DATA_DIR=data
+      - REDIS_URL=redis://client-b-redis:6379
+      - NODE_ENV=production
+    volumes:
+      - client_b_data:/usr/src/app/data
+    depends_on:
+      - client-b-redis
+    restart: always
+
+volumes:
+  client_a_redis_data:
+  client_a_data:
+  client_b_redis_data:
+  client_b_data:

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 
 export default function VotingOverlay() {
   const [data, setData] = useState({ active: false, candidates: [], totalVotes: 0 });
+  const [logoUrl, setLogoUrl] = useState("");
 
   useEffect(() => {
     document.title = `VOTACION | StreamRace ${__APP_VERSION__}`;
@@ -21,8 +22,24 @@ export default function VotingOverlay() {
        }
     };
     
+    const fetchConfig = async () => {
+      try {
+        const res = await fetch(`${apiOrigin}/api/config`);
+        if (res.ok) {
+           const data = await res.json();
+           setLogoUrl(data.logoUrl || "");
+        }
+      } catch (e) {}
+    };
+
     fetchStatus();
-    const interval = setInterval(fetchStatus, 1000);
+    fetchConfig();
+    
+    const interval = setInterval(() => {
+        fetchStatus();
+        fetchConfig();
+    }, 1000);
+    
     return () => clearInterval(interval);
   }, []);
 
@@ -35,6 +52,11 @@ export default function VotingOverlay() {
 
   return (
     <div className="min-h-screen bg-transparent p-10 font-sans text-white flex flex-col items-start justify-end pb-20">
+       {logoUrl && (
+        <div className="fixed top-0 right-6 z-[9999] w-48 h-24 pointer-events-none flex items-center justify-end">
+          <img src={logoUrl} alt="Logo" className="max-w-full max-h-full object-contain drop-shadow-lg" />
+        </div>
+       )}
        <div className="w-[400px] bg-black/90 rounded-xl overflow-hidden shadow-[0_0_15px_rgba(0,0,0,0.8)] border border-white/20 animate-in fade-in slide-in-from-bottom-4 duration-500">
           <div className="bg-[var(--accent)] p-3 text-center font-extrabold text-xl uppercase tracking-wider text-white shadow-lg relative overflow-hidden">
              <div className="absolute inset-0 bg-white/10 skew-x-[-20deg] translate-x-[-50%]"></div>
