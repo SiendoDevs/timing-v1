@@ -5,6 +5,10 @@ Todas las variaciones notables de este proyecto serán documentadas en este arch
 El formato está basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/),
 y este proyecto se adhiere a [Semantic Versioning](https://semver.org/lang/es/).
 
+## [1.2.1] - 2026-01-26
+### Corregido
+- **Circuit Info:** Solucionado problema donde la información del circuito se quedaba cargando infinitamente si la conexión con Redis fallaba o no estaba disponible. Ahora retorna un estado vacío o valores por defecto para evitar bloqueos en la UI.
+
 ## [1.2.0] - 2026-01-26
 ### Añadido
 - **Biblioteca de Circuitos:** Nueva funcionalidad para guardar, cargar y eliminar configuraciones de circuitos (nombre, mapa, récords, etc.) con persistencia en Redis.

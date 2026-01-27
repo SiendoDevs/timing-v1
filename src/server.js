@@ -793,16 +793,18 @@ app.delete("/api/users/:username", requireAuth, (req, res) => {
 
 app.get("/api/circuit", async (req, res) => {
   try {
+    if (!useRedis) return res.json({});
     const data = await redisClient.get("circuit_info");
     res.json(data ? JSON.parse(data) : {});
   } catch (e) {
     console.error("Redis get error:", e);
-    res.status(500).json({ error: "Error fetching circuit info" });
+    res.json({}); // Return empty to prevent UI hang
   }
 });
 
 app.post("/api/circuit", requireAuth, async (req, res) => {
   try {
+    if (!useRedis) return res.status(503).json({ error: "Database unavailable" });
     const currentRaw = await redisClient.get("circuit_info");
     const current = currentRaw ? JSON.parse(currentRaw) : {};
     
@@ -819,47 +821,52 @@ app.post("/api/circuit", requireAuth, async (req, res) => {
 // --- CIRCUIT LIBRARY ENDPOINTS ---
 
 app.get("/api/circuits", async (req, res) => {
+  const defaults = [
+    {
+      id: "monza-default",
+      name: "Autodromo Nazionale Monza",
+      location: "Monza, Italia",
+      length: "5.793 km",
+      turns: "11",
+      recordTime: "1:18.887",
+      recordDriver: "Lewis Hamilton",
+      recordYear: "2020",
+      mapUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b8/Monza_track_map-2000.svg/1200px-Monza_track_map-2000.svg.png",
+      updatedAt: Date.now()
+    },
+    {
+      id: "interlagos-default",
+      name: "Autódromo José Carlos Pace (Interlagos)",
+      location: "São Paulo, Brasil",
+      length: "4.309 km",
+      turns: "15",
+      recordTime: "1:10.540",
+      recordDriver: "Valtteri Bottas",
+      recordYear: "2018",
+      mapUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/2/20/Interlagos_Circuit.svg/1200px-Interlagos_Circuit.svg.png",
+      updatedAt: Date.now()
+    }
+  ];
+
   try {
+    if (!useRedis) return res.json(defaults);
+
     const data = await redisClient.get("circuit_library");
     if (!data) {
-      const defaults = [
-        {
-          id: "monza-default",
-          name: "Autodromo Nazionale Monza",
-          location: "Monza, Italia",
-          length: "5.793 km",
-          turns: "11",
-          recordTime: "1:18.887",
-          recordDriver: "Lewis Hamilton",
-          recordYear: "2020",
-          mapUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b8/Monza_track_map-2000.svg/1200px-Monza_track_map-2000.svg.png",
-          updatedAt: Date.now()
-        },
-        {
-          id: "interlagos-default",
-          name: "Autódromo José Carlos Pace (Interlagos)",
-          location: "São Paulo, Brasil",
-          length: "4.309 km",
-          turns: "15",
-          recordTime: "1:10.540",
-          recordDriver: "Valtteri Bottas",
-          recordYear: "2018",
-          mapUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/2/20/Interlagos_Circuit.svg/1200px-Interlagos_Circuit.svg.png",
-          updatedAt: Date.now()
-        }
-      ];
       await redisClient.set("circuit_library", JSON.stringify(defaults));
       return res.json(defaults);
     }
     res.json(JSON.parse(data));
   } catch (e) {
     console.error("Redis library get error:", e);
-    res.json([]);
+    res.json(defaults); // Fallback to defaults
   }
 });
 
 app.post("/api/circuits", requireAuth, async (req, res) => {
   try {
+    if (!useRedis) return res.status(503).json({ error: "Database unavailable" });
+
     const { id, name, location, length, turns, recordTime, recordDriver, recordYear, mapUrl } = req.body;
     
     const libraryRaw = await redisClient.get("circuit_library");
@@ -888,6 +895,8 @@ app.post("/api/circuits", requireAuth, async (req, res) => {
 
 app.delete("/api/circuits/:id", requireAuth, async (req, res) => {
   try {
+    if (!useRedis) return res.status(503).json({ error: "Database unavailable" });
+
     const { id } = req.params;
     const libraryRaw = await redisClient.get("circuit_library");
     let library = libraryRaw ? JSON.parse(libraryRaw) : [];
