@@ -5,6 +5,18 @@ Todas las variaciones notables de este proyecto serán documentadas en este arch
 El formato está basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/),
 y este proyecto se adhiere a [Semantic Versioning](https://semver.org/lang/es/).
 
+## [1.2.5] - 2026-01-27
+### Cambiado
+- **Circuit Info:**
+  - Optimización de diseño para eliminar scroll vertical (ancho completo, espaciado reducido).
+  - Nueva distribución en 3 columnas para pantallas grandes.
+  - Botón "Guardar Cambios" renombrado a "Aplicar a Overlay" para mayor claridad.
+  - Unificación de estilos y altura de botones.
+- **Biblioteca de Circuitos:**
+  - Solucionado problema de sobreescritura de circuitos.
+  - Añadidos botones explícitos "Nuevo" y "Copia" para mejor gestión.
+  - Mensajes de confirmación para guardar/actualizar.
+
 ## [1.2.4] - 2026-01-27
 ### Añadido
 - **Banderas Especiales:** Implementación completa de "Bandera de Reparación" (círculo naranja/negro) y "Sanción" (bandera negra/blanca) con controles de entrada para número y tiempo.

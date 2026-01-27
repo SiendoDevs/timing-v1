@@ -1,64 +1,21 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { animate, useMount } from "react-ui-animate";
-import { motion, AnimatePresence } from "framer-motion";
-import { Timer } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
 import Announcements from "./Announcements";
 import CurrentLap from "./CurrentLap";
 import Overtakes from "./Overtakes";
 import VotingWidget from "./VotingWidget";
-
-// --- Helpers ---
-function safe(v) {
-  return v == null ? "" : String(v);
-}
-function surname(n) {
-  const s = safe(n).trim();
-  if (!s) return "";
-  if (s.includes(",")) return s.split(",")[0].trim();
-  const parts = s.split(/\s+/);
-  if (parts.length === 1) return s;
-  if (parts.length === 2) return parts[1];
-  return parts.slice(0, -1).join(" ");
-}
-function parseTime(t) {
-  const s = safe(t).trim();
-  if (!s || s === "-" || /lap/i.test(s)) return null;
-  const m = s.match(/^(\d+):([0-5]?\d(?:\.\d+)?)/);
-  if (m) return parseInt(m[1], 10) * 60 + parseFloat(m[2]);
-  const n = s.replace(/[^\d.]/g, "");
-  if (!n) return null;
-  const v = parseFloat(n);
-  return Number.isFinite(v) ? v : null;
-}
-function fastestIndex(list) {
-  let idx = -1;
-  let best = Infinity;
-  for (let i = 0; i < list.length; i++) {
-    const v = parseTime(list[i]?.bestLap ?? list[i]?.lastLap);
-    if (v != null && v < best) {
-      best = v;
-      idx = i;
-    }
-  }
-  return idx;
-}
-function idFor(r) {
-  return `${safe(r.number)}|${safe(surname(r.name))}`;
-}
-function formatTimer(ms) {
-  const m = Math.floor(ms / 60000);
-  const s = Math.floor((ms % 60000) / 1000);
-  const t = Math.floor((ms % 1000) / 100);
-  const p2 = (v) => (v < 10 ? `0${v}` : `${v}`);
-  return m > 0 ? `${m}:${p2(s)}.${t}` : `${s}.${String(Math.floor(ms % 1000)).padStart(3, "0")}`;
-}
-
-const PALETTE = ["#ffd166", "#f4978e", "#caffbf", "#a0c4ff", "#ffadad", "#fdffb6", "#bde0fe", "#d0f4de"];
-function colorFor(numStr, nameStr) {
-  const n = parseInt(safe(numStr), 10);
-  const idx = Number.isFinite(n) ? n % PALETTE.length : Math.abs(safe(nameStr).charCodeAt(0) || 0) % PALETTE.length;
-  return PALETTE[idx];
-}
+import FlagBanner from "./components/livetiming/FlagBanner";
+import LapPopup from "./components/livetiming/LapPopup";
+import TimingRow from "./components/livetiming/TimingRow";
+import { 
+  safe, 
+  surname, 
+  parseTime, 
+  fastestIndex, 
+  idFor, 
+  formatTimer 
+} from "./utils/formatting";
 
 export default function LiveTiming() {
   const params = useMemo(() => new URLSearchParams(window.location.search), []);
@@ -85,7 +42,6 @@ export default function LiveTiming() {
   const [showCurrentLap, setShowCurrentLap] = useState(true);
   const [showFastestLap, setShowFastestLap] = useState(true);
   const [showLapFinish, setShowLapFinish] = useState(true);
-  const SNAP_KEY = "overlay:lastSnapshot";
 
   const [activeCard, setActiveCard] = useState(null); 
   const eventQueue = useRef([]);
@@ -101,25 +57,8 @@ export default function LiveTiming() {
   const [lastFastestTime, setLastFastestTime] = useState(null);
   const recentChanges = useRef(new Map());
 
-  const [showGreenBanner, setShowGreenBanner] = useState(false);
-  const prevRaceFlag = useRef(raceFlag);
-
-  useEffect(() => {
-    if (raceFlag === "GREEN") {
-      const prev = String(prevRaceFlag.current || "");
-      const wasSpecial = prev.startsWith("BLACK") || prev.startsWith("MEATBALL") || prev.startsWith("PENALTY");
-      if (!wasSpecial) {
-        setShowGreenBanner(true);
-        const t = setTimeout(() => setShowGreenBanner(false), 5000);
-        return () => clearTimeout(t);
-      } else {
-        setShowGreenBanner(false);
-      }
-    } else {
-      setShowGreenBanner(false);
-    }
-    prevRaceFlag.current = raceFlag;
-  }, [raceFlag]);
+  // Note: FlagBanner handles its own temporary green banner logic, 
+  // but we still pass the raceFlag to it.
 
   useEffect(() => {
     const limit = limitParam && parseInt(limitParam) > 0 ? parseInt(limitParam) : 10;
@@ -135,8 +74,6 @@ export default function LiveTiming() {
       setPage(0);
     }
   }, [rows.length, limitParam]);
-
-
 
   useEffect(() => {
     if (rows && rows.length > 0) {
@@ -426,6 +363,7 @@ export default function LiveTiming() {
         if (data.sessionName && data.sessionName !== lastSessionNameRef.current) {
             lastSessionNameRef.current = data.sessionName;
             lastPositions.current.clear();
+            recentChanges.current.clear(); // Clear persistent arrows
             eventQueue.current = []; // Clear queue on session change
             prevLapsRef.current = null;
         }
@@ -493,7 +431,7 @@ export default function LiveTiming() {
       if (timerId) clearTimeout(timerId);
       clearInterval(mt);
     };
-  }, [showOverlay]); // Removed other dependencies to avoid re-creating the loop unnecessarily
+  }, [showOverlay]); 
 
   // --- Config Loop (Optimized) ---
   useEffect(() => {
@@ -519,7 +457,7 @@ export default function LiveTiming() {
       } catch {}
       
       if (mounted) {
-          timerId = setTimeout(loadConfig, 3000); // Increased interval to 3s
+          timerId = setTimeout(loadConfig, 3000); 
       }
     }
     
@@ -529,9 +467,6 @@ export default function LiveTiming() {
       if (timerId) clearTimeout(timerId);
     };
   }, []);
-
-  // Removed localStorage restoration logic that was causing hydration issues
-
 
   const fi = fastestIndex(rows);
   let bestOver = null;
@@ -553,68 +488,12 @@ export default function LiveTiming() {
   }
 
   const mountedOverlay = useMount(showOverlay, { from: 0, enter: 1, exit: 0 });
-  const mountedLap = useMount(!!activeCard && showOverlay, { from: 0, enter: 1, exit: 0 });
+  const globalFastestIndex = fastestIndex(rows);
+  const globalFastestRow = globalFastestIndex >= 0 ? rows[globalFastestIndex] : null;
 
   const limit = limitParam && parseInt(limitParam) > 0 ? parseInt(limitParam) : 10;
   const pageStart = page * limit;
   const visibleRows = rows.slice(pageStart, pageStart + limit);
-
-  const globalFastestIndex = fastestIndex(rows);
-  const globalFastestRow = globalFastestIndex >= 0 ? rows[globalFastestIndex] : null;
-
-  const flagBanners = {
-    YELLOW: { text: "BANDERA AMARILLA", class: "bg-yellow-500 text-black animate-pulse" },
-    RED: { text: "BANDERA ROJA", class: "bg-red-600 text-white animate-pulse" },
-    SC: { text: "SAFETY CAR", class: "bg-orange-500 text-black animate-pulse" },
-    VSC: { text: "VIRTUAL SAFETY CAR", class: "bg-orange-500 text-black animate-pulse" },
-    SLOW: { text: "SLOW", class: "bg-orange-500 text-black animate-pulse" },
-    BLUE: { text: "BANDERA AZUL", class: "bg-blue-600 text-white animate-pulse" },
-    WHITE: { text: "BANDERA BLANCA", class: "bg-white text-black animate-pulse" },
-    FINISH: { text: "CARRERA FINALIZADA", class: "bg-white text-black" },
-    GREEN: { text: "BANDERA VERDE", class: "bg-green-500 text-black" }
-  };
-  
-  let activeBanner = null;
-  
-  if (raceFlag && raceFlag.startsWith("BLACK")) {
-     const parts = raceFlag.split(":");
-     const num = parts[1] || "";
-     activeBanner = { 
-        text: num ? `BANDERA NEGRA #${num}` : "BANDERA NEGRA", 
-        class: "bg-black text-white shadow-[0_0_20px_rgba(220,38,38,0.5)] animate-pulse" 
-     };
-  } else if (raceFlag && raceFlag.startsWith("MEATBALL")) {
-     const parts = raceFlag.split(":");
-     const num = parts[1] || "";
-     activeBanner = { 
-        text: num ? `REPARACIÓN #${num}` : "REPARACIÓN", 
-        class: "bg-black text-orange-500 shadow-[0_0_20px_rgba(249,115,22,0.5)] animate-pulse",
-        icon: <div className="w-5 h-5 rounded-full bg-orange-500 border-2 border-black ring-1 ring-orange-500 shrink-0" />
-     };
-  } else if (raceFlag && raceFlag.startsWith("PENALTY")) {
-     const parts = raceFlag.split(":");
-     const num = parts[1] || "";
-     const time = parts[2] || "";
-     activeBanner = { 
-        text: `SANCIÓN #${num} ${time ? `(${time})` : ""}`,
-        class: "bg-white text-black shadow-[0_0_20px_rgba(255,255,255,0.5)] animate-pulse",
-        icon: <div className="w-8 h-8 border border-black shadow-sm" style={{ background: "linear-gradient(to bottom right, black 50%, white 50%)" }} />
-     };
-  } else {
-     activeBanner = flagBanners[raceFlag];
-  }
-  
-  // Only show GREEN banner if temporary state is true
-  if (raceFlag === "GREEN" && !showGreenBanner) {
-    activeBanner = null;
-  }
-
-  const [bannerContent, setBannerContent] = useState(activeBanner);
-  useEffect(() => {
-    if (activeBanner) setBannerContent(activeBanner);
-  }, [activeBanner]);
-
-
 
   return (
     <div>
@@ -628,9 +507,9 @@ export default function LiveTiming() {
         >
         <div className="relative">
           {/* Main Panel */}
-          <div className="rounded-xl overflow-hidden shadow-[0_8px_28px_rgba(0,0,0,0.5)] bg-[#141414] border border-white/5">
+          <div className="rounded-xl overflow-hidden shadow-[0_8px_28px_rgba(0,0,0,0.5)] bg-[#141414]/90 border border-white/5">
             {/* Header */}
-            <div className="flex items-center gap-4 px-5 py-4 border-b border-white/10 bg-[#0a0a0a] relative z-20">
+            <div className="flex items-center gap-4 px-5 py-4 border-b border-white/10 bg-[#0a0a0a]/90 relative z-20">
               <div className="w-2 h-8 rounded-full bg-[var(--accent)] shadow-[0_0_15px_var(--accent)]" />
               <div className="font-black italic text-lg tracking-tighter text-white drop-shadow-lg">{title}</div>
               <div className="ml-auto flex items-center gap-3">
@@ -642,99 +521,36 @@ export default function LiveTiming() {
             </div>
             
             {/* Flag Banner */}
-            <div
-              className={`w-full overflow-hidden transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] relative z-10 ${
-                activeBanner ? "max-h-[60px] opacity-100 translate-y-0" : "max-h-0 opacity-0 -translate-y-[60px]"
-              }`}
-            >
-               {bannerContent && (
-                 <div 
-                    className={`w-full py-2 font-black text-center text-xl uppercase tracking-widest shadow-lg flex items-center justify-center gap-3 ${bannerContent.class}`}
-                    style={bannerContent.style || {}}
-                 >
-                    {bannerContent.icon}
-                    <span className={bannerContent.textClass || ""}>{bannerContent.text}</span>
-                 </div>
-               )}
-            </div>
+            <FlagBanner raceFlag={raceFlag} />
             
             {/* Rows */}
             <div className="flex flex-col relative overflow-hidden">
               <AnimatePresence mode="popLayout" initial={false}>
-                {visibleRows.map((r, i) => {
-                  const id = idFor(r);
-                  const prevPos = lastPositions.current.get(id);
-                  const curNum = Number.parseInt(safe(r.position), 10);
-                  const curPos = Number.isFinite(curNum) ? curNum : 9999;
-                  const prevVal = Number.isFinite(prevPos) ? prevPos : null;
-                  const sname = surname(r.name);
-                  
-                  const diff = (lastPositions.current.size > 0 && prevVal != null) ? prevVal - curPos : 0;
-                  
-                  let finalDiff = diff;
-                  if (finalDiff === 0) {
-                      const recent = recentChanges.current.get(id);
-                      if (recent && Date.now() - recent.time < 8000) {
-                          finalDiff = recent.diff;
-                      }
-                  }
-
-                  const arrow = finalDiff !== 0
-                    ? finalDiff > 0
-                      ? <span className="text-green-500 ml-2 text-xs font-black flex items-center gap-0.5 bg-green-500/10 px-1 rounded">▲ {Math.abs(finalDiff)}</span>
-                      : <span className="text-red-500 ml-2 text-xs font-black flex items-center gap-0.5 bg-red-500/10 px-1 rounded">▼ {Math.abs(finalDiff)}</span>
-                    : null;
-                  
-                  const isFastest = globalFastestRow && idFor(r) === idFor(globalFastestRow);
-                  
-                  let metricVal = "";
-                  const mode = MODES[modeIdx];
-                  if (mode === "GAP") metricVal = r.gap || "-";
-                  else if (mode === "DIFF") metricVal = r.diff || "-";
-                  else if (mode === "TOTAL") metricVal = r.totalTime || "-";
-                  else if (mode === "BEST") metricVal = r.bestLap || "-";
-                  else if (mode === "LAST") metricVal = r.lastLap || "-";
-                  
-                  return (
-                    <motion.div 
-                      key={id} 
-                      layout
-                      initial={{ opacity: 0, x: -20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      exit={{ opacity: 0, x: 20 }}
-                      transition={{ 
-                        layout: { type: "spring", stiffness: 300, damping: 30 },
-                        opacity: { duration: 0.2 }
-                      }}
-                      className={`flex items-center gap-3 px-4 py-1.5 border-b border-white/5 bg-[#0f0f0f]/50 hover:bg-white/5 transition-colors ${isFastest && !r.hasFinishFlag ? "bg-purple-600/50 animate-pulse" : ""}`}
-                    >
-                      {/* Position */}
-                      <div className="w-14 flex items-center justify-end font-black italic text-xl text-white/50 relative">
-                        {r.hasFinishFlag && <span className="absolute left-0 top-1/2 -translate-y-1/2 text-xs">🏁</span>}
-                        {!r.hasFinishFlag && isFastest && <span className="absolute left-0 top-1/2 -translate-y-1/2 text-purple-500 flex items-center justify-center"><Timer size={20} /></span>}
-                        <span>{safe(r.position)}</span>
-                        {arrow}
-                      </div>
-
-                      {/* Number */}
-                      <div className="w-10 h-8 flex items-center justify-center rounded-lg bg-white/10 font-black italic text-lg text-white border border-white/5 shadow-inner">
-                         {safe(r.number)}
-                      </div>
-
-                      {/* Name */}
-                      <div className="flex-1 min-w-0">
-                         <div className="font-bold italic uppercase text-lg tracking-tight text-white truncate drop-shadow-sm">{safe(sname)}</div>
-                      </div>
-
-                      {/* Time */}
-                      <div className="w-24 text-right font-mono font-bold text-lg text-[var(--accent)] tracking-tight">
-                        <span className="metric-swap" key={`${mode}:${id}`}>
-                          {safe(metricVal)}
-                        </span>
-                      </div>
-                    </motion.div>
-                  );
-                })}
+                <motion.div
+                  key={page}
+                  initial={{ x: "100%", opacity: 0 }}
+                  animate={{ x: 0, opacity: 1 }}
+                  exit={{ x: "-100%", opacity: 0 }}
+                  transition={{ type: "spring", bounce: 0, duration: 0.5 }}
+                  className="flex flex-col w-full"
+                >
+                  {visibleRows.map((r, i) => {
+                    const id = idFor(r);
+                    const isFastest = globalFastestRow && idFor(r) === idFor(globalFastestRow);
+                    const mode = MODES[modeIdx];
+                    
+                    return (
+                      <TimingRow 
+                        key={id}
+                        row={r}
+                        prevPos={lastPositions.current.get(id)}
+                        recentChange={recentChanges.current.get(id)}
+                        isFastest={isFastest}
+                        mode={mode}
+                      />
+                    );
+                  })}
+                </motion.div>
               </AnimatePresence>
             </div>
           </div>
@@ -768,86 +584,11 @@ export default function LiveTiming() {
       )}
 
       {/* Lap Card Overlay */}
-      {mountedLap((a, isMounted) => (
-        isMounted && activeCard && (
-          <animate.div
-            style={{ opacity: a, translateY: a.to([0, 1], ["8px", "0px"]) }}
-            className={`fixed right-[calc(var(--overlay-m)*1px)] bottom-[calc(var(--overlay-m)*1px)] w-[320px] rounded-xl overflow-hidden shadow-[0_8px_32px_rgba(0,0,0,0.6)] border border-white/10 bg-[#141414] ${activeCard.type === 'FASTEST' ? "border-purple-500 shadow-[0_0_30px_rgba(168,85,247,0.2)]" : ""}`}
-          >
-            {/* Progress Bar Background */}
-            {activeCard.type === 'FINISH' && activeCard.stage === 'result' && (
-              <div className={`absolute top-0 bottom-0 left-0 animate-progress z-0 pointer-events-none ${activeCard.data.deltaMs > 0 ? "bg-red-500/20" : "bg-green-500/20"}`} />
-            )}
-            
-            {/* FASTEST LAP DESIGN */}
-            {activeCard.type === 'FASTEST' ? (
-               <div className="relative z-10 overflow-hidden">
-                  {/* Background Glow */}
-                  <div className="absolute top-0 right-0 w-[200px] h-[200px] bg-purple-600/20 blur-[60px] rounded-full translate-x-1/3 -translate-y-1/3 pointer-events-none" />
-                  
-                  {/* Header: Label */}
-                  <div className="px-5 py-3 flex items-center justify-between border-b border-white/10 bg-white/5 backdrop-blur-sm">
-                      <div className="flex items-center gap-2 text-purple-400">
-                          <Timer className="w-5 h-5 animate-pulse" />
-                          <span className="font-black italic uppercase tracking-widest text-sm">Récord de Vuelta</span>
-                      </div>
-                      <div className="w-16 h-1 bg-purple-500 rounded-full" />
-                  </div>
-
-                  {/* Main Content */}
-                  <div className="p-6 flex flex-col items-center relative">
-                      {/* Time */}
-                      <div className="text-5xl font-black italic tracking-tighter text-white drop-shadow-[0_4px_8px_rgba(0,0,0,0.5)] mb-3 tabular-nums relative z-10">
-                          {activeCard.data.time}
-                      </div>
-                      
-                      {/* Driver Info */}
-                      <div className="flex items-center gap-3 w-full bg-white/5 rounded-lg p-2 border border-white/10">
-                          <div className="w-12 h-10 flex items-center justify-center rounded bg-purple-600 text-white font-black italic text-xl shadow-lg shrink-0">
-                              {activeCard.data.number}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                              <div className="font-black italic uppercase text-xl leading-none truncate text-white/90">
-                                  {activeCard.data.name}
-                              </div>
-                          </div>
-                      </div>
-                  </div>
-               </div>
-            ) : (
-              /* STANDARD DESIGN (FINISH / OTHER) */
-              <>
-                <div className="relative z-10 px-4 py-3 flex items-center gap-3 border-b border-white/10 bg-[#0a0a0a]">
-                   <div className="w-10 h-8 flex items-center justify-center rounded bg-white/10 font-black italic text-lg text-white">
-                      {activeCard.data.number}
-                   </div>
-                   <div className="font-black uppercase italic text-xl leading-none truncate flex-1 text-white">
-                      {activeCard.data.name}
-                   </div>
-                </div>
-
-                <div className="relative z-10 p-4">
-                  <div className="flex flex-col items-center justify-center min-h-[60px]">
-                    <div className={`text-5xl font-black tabular-nums leading-none tracking-tighter text-center italic transition-all duration-300 ${activeCard.stage === 'result' ? (activeCard.data.deltaMs > 0 ? "text-red-500 drop-shadow-[0_0_10px_rgba(239,68,68,0.5)]" : "text-green-500 drop-shadow-[0_0_10px_rgba(34,197,94,0.5)]") : "text-white"}`}>
-                      {cardTimerDisplay}
-                    </div>
-                  </div>
-                  
-                  <div className="flex items-center justify-center pt-3 mt-2 border-t border-white/10">
-                        {activeCard.data.deltaMs !== null && Math.abs(activeCard.data.deltaMs) < 10000 && activeCard.stage === 'result' ? (
-                        <div className={`px-3 py-1 rounded font-black tabular-nums leading-none tracking-tight italic text-xl shadow-lg ${activeCard.data.deltaMs < 0 ? "bg-green-500 text-black" : "bg-red-500 text-white"}`}>
-                            {activeCard.data.deltaMs > 0 ? "+" : ""}{(activeCard.data.deltaMs / 1000).toFixed(2)}
-                        </div>
-                        ) : (
-                        <div className="text-white/30 text-xs font-bold italic uppercase tracking-widest">EN CURSO</div>
-                        )}
-                  </div>
-                </div>
-              </>
-            )}
-          </animate.div>
-        )
-      ))}
+      <LapPopup 
+        show={showOverlay} 
+        activeCard={activeCard} 
+        timerDisplay={cardTimerDisplay} 
+      />
     </div>
   );
 }
