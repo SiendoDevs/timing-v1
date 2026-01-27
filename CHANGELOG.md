@@ -5,6 +5,16 @@ Todas las variaciones notables de este proyecto serán documentadas en este arch
 El formato está basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/),
 y este proyecto se adhiere a [Semantic Versioning](https://semver.org/lang/es/).
 
+## [1.2.2] - 2026-01-27
+### Añadido
+- **Subida de Imágenes:** Soporte completo para subir mapas de circuitos (PNG, max 1MB) directamente a Cloudinary desde el Dashboard.
+- **Previsualización:** Nueva vista previa de imagen en la sección de "Mapa del Circuito" y en la lista de la "Biblioteca".
+
+### Corregido
+- **Cloudinary Upload:** Solucionado problema con respuestas "pending" o URLs faltantes implementando subida vía `upload_stream` sincrónico.
+- **UI:** Mejorado el estilo de las previsualizaciones de imagen para que no ocupen espacio excesivo (max-height limitado y ajuste `object-contain`).
+- **Redis:** Implementada sanitización automática de la variable `REDIS_URL` para prevenir errores si se pega accidentalmente el comando CLI completo.
+
 ## [1.2.1] - 2026-01-26
 ### Corregido
 - **Circuit Info:** Solucionado problema donde la información del circuito se quedaba cargando infinitamente si la conexión con Redis fallaba o no estaba disponible. Ahora retorna un estado vacío o valores por defecto para evitar bloqueos en la UI.

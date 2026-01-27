@@ -17,7 +17,8 @@ import {
   Award,
   ListChecks,
   Check,
-  Wifi
+  Wifi,
+  Upload as UploadIcon
 } from "lucide-react";
 
 // --- Components ---
@@ -290,6 +291,7 @@ function CircuitInfo({ token }) {
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState("");
   
+  const [id, setId] = useState(null);
   const [name, setName] = useState("");
   const [location, setLocation] = useState("");
   const [length, setLength] = useState("");
@@ -298,6 +300,8 @@ function CircuitInfo({ token }) {
   const [recordDriver, setRecordDriver] = useState("");
   const [recordYear, setRecordYear] = useState("");
   const [mapUrl, setMapUrl] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef(null);
 
   // Library State
   const [libraryOpen, setLibraryOpen] = useState(false);
@@ -329,6 +333,55 @@ function CircuitInfo({ token }) {
     }
   }
 
+  async function handleImageUpload(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    if (file.type !== "image/png") {
+      alert("Solo se permiten imágenes PNG.");
+      return;
+    }
+
+    if (file.size > 1024 * 1024) {
+      alert("La imagen no puede superar 1MB.");
+      return;
+    }
+
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("image", file);
+
+      const apiOrigin = import.meta.env.VITE_API_URL || "";
+      const res = await fetch(`${apiOrigin}/api/upload`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}`
+        },
+        body: formData
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        console.log("Upload successful:", data);
+        if (data.url) {
+          setMapUrl(data.url);
+        } else {
+          alert("Error: La respuesta del servidor no contiene la URL de la imagen.");
+        }
+      } else {
+        const err = await res.json();
+        alert("Error al subir imagen: " + (err.error || "Desconocido"));
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Error de conexión al subir imagen.");
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
   async function saveToLibrary() {
     if (!name) return alert("El nombre del circuito es obligatorio para guardar en la biblioteca.");
     if (!confirm("¿Guardar este circuito en la biblioteca?")) return;
@@ -342,12 +395,15 @@ function CircuitInfo({ token }) {
             "Authorization": `Bearer ${token}`
         },
         body: JSON.stringify({
-          name, location, length, turns, recordTime, recordDriver, recordYear, mapUrl
+          id, name, location, length, turns, recordTime, recordDriver, recordYear, mapUrl
         })
       });
       if (res.ok) {
         const data = await res.json();
         setLibraryCircuits(data.library);
+        if (data.savedCircuit?.id) {
+          setId(data.savedCircuit.id);
+        }
         alert("Circuito guardado en biblioteca exitosamente.");
       } else {
         alert("Error al guardar en biblioteca.");
@@ -381,6 +437,7 @@ function CircuitInfo({ token }) {
 
   function loadFromLibrary(c) {
     if (!confirm(`¿Cargar los datos del circuito "${c.name}"?\nSe reemplazarán los datos actuales no guardados.`)) return;
+    setId(c.id || null);
     setName(c.name || "");
     setLocation(c.location || "");
     setLength(c.length || "");
@@ -401,6 +458,7 @@ function CircuitInfo({ token }) {
       const res = await fetch(`${apiOrigin}/api/circuit`);
       if (res.ok) {
         const data = await res.json();
+        setId(data.id || null);
         setName(data.name || "");
         setLocation(data.location || "");
         setLength(data.length || "");
@@ -429,7 +487,7 @@ function CircuitInfo({ token }) {
           "Authorization": `Bearer ${token}`
         },
         body: JSON.stringify({
-          name, location, length, turns, recordTime, recordDriver, recordYear, mapUrl
+          id, name, location, length, turns, recordTime, recordDriver, recordYear, mapUrl
         })
       });
       
@@ -514,25 +572,56 @@ function CircuitInfo({ token }) {
           {/* Map / Image */}
           <div className="col-span-1 md:col-span-2 bg-[#141414] p-6 rounded-xl border border-white/5 space-y-4">
             <SectionHeader title="Mapa del Circuito" icon={<MapIcon className="w-5 h-5 text-[var(--accent)]" />} />
-            <div className="flex gap-4">
-               <div className="flex-1">
-                 <Input label="URL de la Imagen" value={mapUrl} onChange={setMapUrl} placeholder="https://..." />
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+               <div className="md:col-span-2 space-y-4">
+                  <Input label="URL de la Imagen" value={mapUrl} onChange={setMapUrl} placeholder="https://..." />
+                  
+                  <div className="flex gap-3">
+                     <input 
+                        type="file" 
+                        ref={fileInputRef}
+                        onChange={handleImageUpload}
+                        accept="image/png"
+                        className="hidden"
+                     />
+                     <button 
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={uploading}
+                        className="flex-1 px-4 py-3 bg-white/5 border border-white/10 hover:bg-white/10 text-white font-bold uppercase text-xs rounded transition-colors flex items-center justify-center gap-2"
+                        title="Subir imagen PNG (max 1MB)"
+                     >
+                        {uploading ? <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></span> : <UploadIcon className="w-4 h-4" />}
+                        {uploading ? "Subiendo..." : "Subir PNG"}
+                     </button>
+
+                     <button 
+                        onClick={saveToLibrary}
+                        className="flex-1 px-4 py-3 bg-[var(--accent)]/10 border border-[var(--accent)]/20 hover:bg-[var(--accent)]/20 text-[var(--accent)] font-bold uppercase text-xs rounded transition-colors flex items-center justify-center gap-2"
+                        title="Guardar configuración actual en biblioteca"
+                     >
+                        <Save className="w-4 h-4" /> Guardar en Bibl.
+                     </button>
+                  </div>
                </div>
-               <div className="flex items-end">
-                  <button 
-                    onClick={saveToLibrary}
-                    className="px-4 py-2.5 bg-white/5 border border-white/10 hover:bg-white/10 text-white font-bold uppercase text-xs rounded transition-colors whitespace-nowrap flex items-center gap-2"
-                    title="Guardar configuración actual en biblioteca"
-                  >
-                    <Save className="w-4 h-4" /> Guardar en Biblioteca
-                  </button>
+
+               <div className="md:col-span-1">
+                  <div className="h-full min-h-[150px] bg-black/40 rounded-lg border border-white/10 flex items-center justify-center overflow-hidden relative">
+                     {mapUrl ? (
+                        <img 
+                           src={mapUrl} 
+                           alt="Mapa" 
+                           className="max-w-full max-h-[120px] object-contain p-2" 
+                        />
+                     ) : (
+                        <div className="text-center text-white/20 p-4">
+                           <MapIcon className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                           <span className="text-xs uppercase font-bold block">Vista Previa</span>
+                        </div>
+                     )}
+                  </div>
                </div>
             </div>
-            {mapUrl && (
-              <div className="mt-4 bg-black/40 rounded-lg p-2 border border-white/10 flex justify-center">
-                <img src={mapUrl} alt="Mapa Circuito" className="max-h-64 object-contain opacity-80" onError={(e) => e.target.style.display = 'none'} />
-              </div>
-            )}
           </div>
         </div>
 
@@ -568,10 +657,10 @@ function CircuitInfo({ token }) {
                 >
                   <div className="flex items-center gap-4">
                     {c.mapUrl ? (
-                      <img src={c.mapUrl} alt="" className="w-16 h-16 object-cover rounded bg-black/50" onError={e => e.target.style.display = 'none'} />
+                      <img src={c.mapUrl} alt="" className="w-20 h-20 object-contain p-2 rounded bg-black/50" onError={e => e.target.style.display = 'none'} />
                     ) : (
-                      <div className="w-16 h-16 bg-white/5 rounded flex items-center justify-center text-2xl">
-                        <Flag className="w-8 h-8 text-white/20" />
+                      <div className="w-12 h-12 bg-white/5 rounded flex items-center justify-center text-xl">
+                        <Flag className="w-6 h-6 text-white/20" />
                       </div>
                     )}
                     <div>

@@ -3,10 +3,59 @@ import cors from "cors";
 import puppeteer from "puppeteer";
 import path from "node:path";
 import fs from "node:fs";
+import { Readable } from "node:stream";
 import { createClient } from "redis";
 import dotenv from "dotenv";
+import { v2 as cloudinary } from "cloudinary";
+import multer from "multer";
 
 dotenv.config();
+
+// --- CLOUDINARY CONFIG ---
+// Handle potential quotes in env var (common issue)
+if (process.env.CLOUDINARY_URL) {
+  let cUrl = process.env.CLOUDINARY_URL;
+  // Remove quotes if present
+  if (cUrl.startsWith('"') || cUrl.startsWith("'")) {
+    cUrl = cUrl.replace(/['"]/g, '');
+    process.env.CLOUDINARY_URL = cUrl;
+  }
+  
+  // Explicitly configure to ensure it works even if env auto-detection fails
+  // Format: cloudinary://api_key:api_secret@cloud_name
+  const match = cUrl.match(/^cloudinary:\/\/([^:]+):([^@]+)@(.+)$/);
+  if (match) {
+    cloudinary.config({
+      api_key: match[1],
+      api_secret: match[2],
+      cloud_name: match[3],
+      secure: true
+    });
+    console.log("Cloudinary configured manually. Cloud Name:", match[3]);
+  } else {
+    console.warn("Invalid CLOUDINARY_URL format. Expected: cloudinary://key:secret@cloud_name");
+  }
+}
+
+const cloudinaryConfigured = !!process.env.CLOUDINARY_URL;
+if (!cloudinaryConfigured) {
+  console.warn("CLOUDINARY_URL not found. Image uploads will be disabled.");
+}
+
+// --- MULTER CONFIG ---
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 1024 * 1024, // 1MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype === "image/png") {
+      cb(null, true);
+    } else {
+      cb(new Error("Only PNG images are allowed"), false);
+    }
+  },
+});
 
 let speedhiveUrl = process.env.SPEEDHIVE_URL || "";
 let overlayEnabled = true;
@@ -957,7 +1006,7 @@ app.post("/api/circuits", requireAuth, async (req, res) => {
 
     await redisClient.set("circuit_library", JSON.stringify(library));
     console.log("POST /api/circuits: Saved to Redis. Total circuits:", library.length);
-    res.json({ ok: true, library });
+    res.json({ ok: true, library, savedCircuit: newCircuit });
   } catch (e) {
     console.error("Redis library save error:", e);
     res.status(500).json({ error: "Error saving to library" });
@@ -992,6 +1041,67 @@ app.delete("/api/circuits/:id", requireAuth, async (req, res) => {
   } catch (e) {
     console.error("Redis library delete error:", e);
     res.status(500).json({ error: "Error deleting from library" });
+  }
+});
+
+// --- UPLOAD ENDPOINT ---
+
+app.post("/api/upload", requireAuth, upload.single("image"), async (req, res) => {
+  if (!cloudinaryConfigured) {
+    return res.status(503).json({ error: "Cloudinary not configured" });
+  }
+
+  if (!req.file) {
+    return res.status(400).json({ error: "No image file provided" });
+  }
+
+  try {
+    const bufferToStream = (buffer) => {
+      const readable = new Readable({
+        read() {
+          this.push(buffer);
+          this.push(null);
+        }
+      });
+      return readable;
+    };
+
+    const uploadStream = (buffer) => {
+      return new Promise((resolve, reject) => {
+        const stream = cloudinary.uploader.upload_stream(
+          { 
+            folder: "circuit_maps", 
+            resource_type: "image",
+            // Explicitly disable async to ensure we get the result immediately
+            async: false 
+          },
+          (error, result) => {
+            if (error) return reject(error);
+            resolve(result);
+          }
+        );
+        bufferToStream(buffer).pipe(stream);
+      });
+    };
+
+    const result = await uploadStream(req.file.buffer);
+
+    console.log("Cloudinary Stream Result:", result);
+    
+    // Fallback to 'url' if 'secure_url' is missing
+    let finalUrl = result.secure_url || result.url;
+
+    if (!finalUrl) {
+      if (result.status === 'pending') {
+         throw new Error("Cloudinary returned 'pending' status. This usually means the account has strict moderation or async settings enabled. Please check Cloudinary settings.");
+      }
+      throw new Error("Cloudinary response missing URL. Result: " + JSON.stringify(result));
+    }
+    
+    res.json({ url: finalUrl });
+  } catch (e) {
+    console.error("Cloudinary upload error:", e);
+    res.status(500).json({ error: "Upload failed: " + e.message });
   }
 });
 
