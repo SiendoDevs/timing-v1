@@ -27,14 +27,16 @@ const USERS_FILE = path.resolve("users.json");
 let useRedis = false;
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
 
-const redisClient = createClient({
-  url: REDIS_URL,
-  socket: {
-    // Enable TLS if using rediss:// and skip cert verification if needed (common for some providers)
-    tls: REDIS_URL.startsWith('rediss://'),
+// Configure Redis client safely
+const redisOptions = { url: REDIS_URL };
+if (REDIS_URL.startsWith('rediss://')) {
+  redisOptions.socket = {
+    tls: true,
     rejectUnauthorized: false
-  }
-});
+  };
+}
+
+const redisClient = createClient(redisOptions);
 
 redisClient.on('error', (err) => {
   // Only log if we expect Redis to be working (useRedis is true)
@@ -44,6 +46,15 @@ redisClient.on('error', (err) => {
 });
 
 const connectRedisWithRetry = async (retries = 5, delay = 2000) => {
+  // Quick check: If in production (Render) and URL is localhost, user likely forgot to set REDIS_URL.
+  // We skip connection to avoid startup delay and error logs.
+  if (process.env.NODE_ENV === 'production' && REDIS_URL.includes('localhost')) {
+    console.log("Production environment detected but REDIS_URL is missing (defaulting to localhost).");
+    console.log("Skipping Redis connection. App will run in memory-only mode.");
+    useRedis = false;
+    return;
+  }
+
   for (let i = 0; i < retries; i++) {
     try {
       console.log(`Attempting to connect to Redis (Attempt ${i + 1}/${retries})...`);
