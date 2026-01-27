@@ -4,7 +4,7 @@ export default function VotingOverlay() {
   const [data, setData] = useState({ active: false, candidates: [], totalVotes: 0 });
 
   useEffect(() => {
-    document.title = "VOTACION | StreamRace 1.0";
+    document.title = `VOTACION | StreamRace ${__APP_VERSION__}`;
   }, []);
 
   useEffect(() => {

@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { animate, useMount } from "react-ui-animate";
 import { Timer } from "lucide-react";
+import Announcements from "./Announcements";
 import CurrentLap from "./CurrentLap";
 import Overtakes from "./Overtakes";
-import Announcements from "./Announcements";
 import VotingWidget from "./VotingWidget";
 
 // --- Helpers ---
@@ -148,7 +148,10 @@ export default function LiveTiming() {
   }, [rows]);
 
   useEffect(() => {
-    document.title = "LIVETIMING | StreamRace 1.0";
+    document.title = `LIVE | StreamRace ${__APP_VERSION__}`;
+  }, []);
+
+  useEffect(() => {
     const wpx = parseInt(widthPxParam);
     if (wpx && wpx >= 200 && wpx <= 900) {
       document.documentElement.style.setProperty("--overlay-wpx", String(wpx));

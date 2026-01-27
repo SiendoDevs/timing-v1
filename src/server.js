@@ -25,34 +25,49 @@ const USERS_FILE = path.resolve("users.json");
 
 // --- REDIS CONNECTION ---
 let useRedis = false;
+const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
+
 const redisClient = createClient({
-  url: process.env.REDIS_URL || 'redis://localhost:6379'
+  url: REDIS_URL,
+  socket: {
+    // Enable TLS if using rediss:// and skip cert verification if needed (common for some providers)
+    tls: REDIS_URL.startsWith('rediss://'),
+    rejectUnauthorized: false
+  }
 });
 
 redisClient.on('error', (err) => {
   // Only log if we expect Redis to be working (useRedis is true)
-  // This prevents spamming the console if Redis is down from the start
   if (useRedis) {
     console.error('Redis Client Error', err);
   }
 });
 
-(async () => {
-  try {
-    await redisClient.connect();
-    useRedis = true;
-    console.log("Redis connected.");
-  } catch (e) {
-    console.log("Redis connection failed. Running in memory-only mode.");
-    useRedis = false;
-    // Disconnect to stop auto-reconnect attempts and log spam
+const connectRedisWithRetry = async (retries = 5, delay = 2000) => {
+  for (let i = 0; i < retries; i++) {
     try {
-      await redisClient.disconnect();
-    } catch (disconnectError) {
-      // Ignore disconnect errors
+      console.log(`Attempting to connect to Redis (Attempt ${i + 1}/${retries})...`);
+      await redisClient.connect();
+      useRedis = true;
+      console.log("Redis connected successfully.");
+      return;
+    } catch (e) {
+      console.error(`Redis connection attempt ${i + 1} failed:`, e.message);
+      if (i < retries - 1) {
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
     }
   }
-})();
+  console.log("All Redis connection attempts failed. Running in memory-only mode.");
+  useRedis = false;
+  // Ensure we are disconnected to stop internal retries of the client
+  try {
+    if (redisClient.isOpen) await redisClient.disconnect();
+  } catch (e) { /* ignore */ }
+};
+
+// Start connection process
+connectRedisWithRetry();
 
 console.log("---------------------------------------------------");
 console.log("---  SERVER STARTING: SPANISH COMMENTS ENABLED  ---");

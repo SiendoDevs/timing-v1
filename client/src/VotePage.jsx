@@ -12,7 +12,7 @@ export default function VotePage() {
 
   // Load voting status
   useEffect(() => {
-    document.title = "VOTAR | StreamRace 1.0";
+    document.title = `VOTAR | StreamRace ${__APP_VERSION__}`;
     async function load() {
       try {
         const apiOrigin = import.meta.env.VITE_API_URL || "";

@@ -695,11 +695,11 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!token) return;
-    document.title = "DASHBOARD | StreamRace 1.0";
-    loadConfig(true); // true = isInitial load, don't set URL
+    document.title = `DASHBOARD | StreamRace ${__APP_VERSION__}`;
+    loadConfig(true);  
     const interval = setInterval(() => {
       if (!savingRef.current) {
-        loadConfig();
+        loadConfig(false);
       }
     }, 2000);
     return () => clearInterval(interval);
@@ -720,8 +720,13 @@ export default function Dashboard() {
     const apiOrigin = import.meta.env.VITE_API_URL || "";
     const res = await fetch(`${apiOrigin}/api/config`);
     const data = await res.json();
-    if (!isInitial) setUrl(data.speedhiveUrl || "");
-    if (!isInitial) setPublicUrl(data.publicUrl || "");
+    
+    // Fix: Only update text fields on initial load to prevent overwriting user input while typing
+    if (isInitial) {
+      setUrl(data.speedhiveUrl || "");
+      setPublicUrl(data.publicUrl || "");
+    }
+    
     setOverlayEnabled(data.overlayEnabled !== false);
     setScrapingEnabled(data.scrapingEnabled !== false);
     setCommentsEnabled(data.commentsEnabled !== false);
