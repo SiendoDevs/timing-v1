@@ -6,3 +6,4 @@ dist/
 coverage/
 .vscode/
 users.json
+config.json

@@ -42,6 +42,8 @@ if (REDIS_URL.includes('redis-cli')) {
   }
 }
 
+console.log("Using REDIS_URL:", REDIS_URL.replace(/:[^:@]+@/, ':***@')); // Debug log
+
 // Configure Redis client safely
 const redisOptions = { url: REDIS_URL };
 if (REDIS_URL.startsWith('rediss://')) {
