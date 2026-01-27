@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { animate, useMount } from "react-ui-animate";
+import { motion, AnimatePresence } from "framer-motion";
 import { Timer } from "lucide-react";
 import Announcements from "./Announcements";
 import CurrentLap from "./CurrentLap";
@@ -98,6 +99,7 @@ export default function LiveTiming() {
   const prevLapsRef = useRef(null);
   const [lastFastestKey, setLastFastestKey] = useState(null);
   const [lastFastestTime, setLastFastestTime] = useState(null);
+  const recentChanges = useRef(new Map());
 
   const [showGreenBanner, setShowGreenBanner] = useState(false);
   const prevRaceFlag = useRef(raceFlag);
@@ -137,13 +139,22 @@ export default function LiveTiming() {
 
   useEffect(() => {
     if (rows && rows.length > 0) {
+      const now = Date.now();
       rows.forEach(r => {
         const id = idFor(r);
         const pos = parseInt(safe(r.position), 10);
         if (Number.isFinite(pos)) {
+          const prev = lastPositions.current.get(id);
+          if (prev != null && prev !== pos) {
+            recentChanges.current.set(id, { diff: prev - pos, time: now });
+          }
           lastPositions.current.set(id, pos);
         }
       });
+      // Cleanup
+      for (const [k, v] of recentChanges.current) {
+        if (now - v.time > 8000) recentChanges.current.delete(k);
+      }
     }
   }, [rows]);
 
@@ -185,7 +196,8 @@ export default function LiveTiming() {
     const fi = fastestIndex(nextRows);
     const fiTime = fi >= 0 ? parseTime(nextRows[fi]?.bestLap ?? nextRows[fi]?.lastLap) : null;
     const fiId = fi >= 0 ? `${safe(nextRows[fi]?.number)}|${safe(surname(nextRows[fi]?.name))}` : null;
-    const shouldAnim = fi >= 0 && (fiId !== lastFastestKey || (fiTime != null && (lastFastestTime == null || fiTime < lastFastestTime)));
+    // Only animate if the driver changes (ignore self-improvements to reduce spam)
+    const shouldAnim = fi >= 0 && fiId !== lastFastestKey;
     if (fi >= 0) {
       setLastFastestKey(fiId);
       setLastFastestTime(fiTime);
@@ -568,7 +580,7 @@ export default function LiveTiming() {
      const num = parts[1] || "";
      activeBanner = { 
         text: num ? `BANDERA NEGRA #${num}` : "BANDERA NEGRA", 
-        class: "bg-black text-white border-2 border-red-600 shadow-[0_0_20px_rgba(220,38,38,0.5)] animate-pulse" 
+        class: "bg-black text-white shadow-[0_0_20px_rgba(220,38,38,0.5)] animate-pulse" 
      };
   } else {
      activeBanner = flagBanners[raceFlag];
@@ -584,12 +596,7 @@ export default function LiveTiming() {
     if (activeBanner) setBannerContent(activeBanner);
   }, [activeBanner]);
 
-  const mountedFlag = useMount(!!activeBanner, {
-    from: 0,
-    enter: 1,
-    exit: 0,
-    config: { tension: 100, friction: 20 }
-  });
+
 
   return (
     <div>
@@ -617,25 +624,21 @@ export default function LiveTiming() {
             </div>
             
             {/* Flag Banner */}
-            {mountedFlag((v) => (
-              <animate.div
-                style={{
-                  opacity: v,
-                  maxHeight: v.to([0, 1], ["0px", "60px"]),
-                  translateY: v.to([0, 1], ["-60px", "0px"]),
-                }}
-                className="w-full overflow-hidden relative z-10"
-              >
-                 {bannerContent && (
-                   <div className={`w-full py-2 font-black text-center text-xl uppercase tracking-widest ${bannerContent.class} shadow-lg`}>
-                      {bannerContent.text}
-                   </div>
-                 )}
-              </animate.div>
-            ))}
+            <div
+              className={`w-full overflow-hidden transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] relative z-10 ${
+                activeBanner ? "max-h-[60px] opacity-100 translate-y-0" : "max-h-0 opacity-0 -translate-y-[60px]"
+              }`}
+            >
+               {bannerContent && (
+                 <div className={`w-full py-2 font-black text-center text-xl uppercase tracking-widest ${bannerContent.class} shadow-lg`}>
+                    {bannerContent.text}
+                 </div>
+               )}
+            </div>
             
             {/* Rows */}
-            <div className="flex flex-col">
+            <div className="flex flex-col relative overflow-hidden">
+              <AnimatePresence mode="popLayout" initial={false}>
                 {visibleRows.map((r, i) => {
                   const id = idFor(r);
                   const prevPos = lastPositions.current.get(id);
@@ -644,12 +647,20 @@ export default function LiveTiming() {
                   const prevVal = Number.isFinite(prevPos) ? prevPos : null;
                   const sname = surname(r.name);
                   
-                  const arrow = (lastPositions.current.size > 0 && prevVal != null)
-                    ? curPos < prevVal
-                      ? <span className="text-green-500 ml-1 text-sm">▲</span>
-                      : curPos > prevVal
-                        ? <span className="text-red-500 ml-1 text-sm">▼</span>
-                        : null
+                  const diff = (lastPositions.current.size > 0 && prevVal != null) ? prevVal - curPos : 0;
+                  
+                  let finalDiff = diff;
+                  if (finalDiff === 0) {
+                      const recent = recentChanges.current.get(id);
+                      if (recent && Date.now() - recent.time < 8000) {
+                          finalDiff = recent.diff;
+                      }
+                  }
+
+                  const arrow = finalDiff !== 0
+                    ? finalDiff > 0
+                      ? <span className="text-green-500 ml-2 text-xs font-black flex items-center gap-0.5 bg-green-500/10 px-1 rounded">▲ {Math.abs(finalDiff)}</span>
+                      : <span className="text-red-500 ml-2 text-xs font-black flex items-center gap-0.5 bg-red-500/10 px-1 rounded">▼ {Math.abs(finalDiff)}</span>
                     : null;
                   
                   const isFastest = globalFastestRow && idFor(r) === idFor(globalFastestRow);
@@ -663,12 +674,23 @@ export default function LiveTiming() {
                   else if (mode === "LAST") metricVal = r.lastLap || "-";
                   
                   return (
-                    <div key={id} className={`flex items-center gap-3 px-4 py-1.5 border-b border-white/5 bg-[#0f0f0f]/50 hover:bg-white/5 transition-colors ${isFastest && showFastestLap && !r.hasFinishFlag ? "bg-purple-600/50 animate-pulse" : ""}`}>
+                    <motion.div 
+                      key={id} 
+                      layout
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: 20 }}
+                      transition={{ 
+                        layout: { type: "spring", stiffness: 300, damping: 30 },
+                        opacity: { duration: 0.2 }
+                      }}
+                      className={`flex items-center gap-3 px-4 py-1.5 border-b border-white/5 bg-[#0f0f0f]/50 hover:bg-white/5 transition-colors ${isFastest && !r.hasFinishFlag ? "bg-purple-600/50 animate-pulse" : ""}`}
+                    >
                       {/* Position */}
-                      <div className="w-10 text-right font-black italic text-xl text-white/50 relative">
-                        {r.hasFinishFlag && <span className="absolute -left-2 top-1/2 -translate-y-1/2 text-xs">🏁</span>}
-                        {!r.hasFinishFlag && isFastest && showFastestLap && <span className="absolute left-0 top-1/2 -translate-y-1/2 text-purple-500 flex items-center justify-center"><Timer size={20} /></span>}
-                        {safe(r.position)}
+                      <div className="w-14 flex items-center justify-end font-black italic text-xl text-white/50 relative">
+                        {r.hasFinishFlag && <span className="absolute left-0 top-1/2 -translate-y-1/2 text-xs">🏁</span>}
+                        {!r.hasFinishFlag && isFastest && <span className="absolute left-0 top-1/2 -translate-y-1/2 text-purple-500 flex items-center justify-center"><Timer size={20} /></span>}
+                        <span>{safe(r.position)}</span>
                         {arrow}
                       </div>
 
@@ -688,13 +710,14 @@ export default function LiveTiming() {
                           {safe(metricVal)}
                         </span>
                       </div>
-                    </div>
+                    </motion.div>
                   );
                 })}
+              </AnimatePresence>
             </div>
           </div>
 
-          {/* Floating Elements (Laps, Overtakes, Comments) */}
+          {/* Floating Elements (Laps, Overtakes) */}
           <div className="absolute top-0 left-full ml-4 flex gap-3 items-start">
             {lapsLabel && showCurrentLap && (
               <CurrentLap finishFlag={finishFlag} lapsLabel={lapsLabel} lapsChangeAnim={lapsChangeAnim} />
@@ -702,12 +725,18 @@ export default function LiveTiming() {
             {showOvertakes && (
               <Overtakes badge={bestOver?.badge} who={bestOver?.who} gain={bestOver?.gain || 0} />
             )}
-            {showComments && <Announcements items={annItems} />}
           </div>
           
         </div>
         </animate.div>
       ))}
+
+      {/* Announcements Overlay - Bottom Left */}
+      {showComments && (
+        <div className="fixed bottom-[calc(var(--overlay-m)*1px)] left-[calc(var(--overlay-m)*1px)] z-50">
+           <Announcements items={annItems} />
+        </div>
+      )}
 
       {/* Voting Widget */}
       {showVotingWidget && (
@@ -721,50 +750,79 @@ export default function LiveTiming() {
         isMounted && activeCard && (
           <animate.div
             style={{ opacity: a, translateY: a.to([0, 1], ["8px", "0px"]) }}
-            className={`fixed right-[calc(var(--overlay-m)*1px)] bottom-[calc(var(--overlay-m)*1px)] w-[300px] rounded-xl overflow-hidden shadow-[0_8px_32px_rgba(0,0,0,0.6)] border border-white/10 bg-[#141414] ${activeCard.type === 'FASTEST' ? "border-purple-500/50 shadow-purple-900/20" : ""}`}
+            className={`fixed right-[calc(var(--overlay-m)*1px)] bottom-[calc(var(--overlay-m)*1px)] w-[320px] rounded-xl overflow-hidden shadow-[0_8px_32px_rgba(0,0,0,0.6)] border border-white/10 bg-[#141414] ${activeCard.type === 'FASTEST' ? "border-purple-500 shadow-[0_0_30px_rgba(168,85,247,0.2)]" : ""}`}
           >
             {/* Progress Bar Background */}
             {activeCard.type === 'FINISH' && activeCard.stage === 'result' && (
               <div className={`absolute top-0 bottom-0 left-0 animate-progress z-0 pointer-events-none ${activeCard.data.deltaMs > 0 ? "bg-red-500/20" : "bg-green-500/20"}`} />
             )}
-            {activeCard.type === 'FASTEST' && (
-              <div className="absolute top-0 bottom-0 left-0 bg-purple-500/20 z-0 pointer-events-none" />
-            )}
+            
+            {/* FASTEST LAP DESIGN */}
+            {activeCard.type === 'FASTEST' ? (
+               <div className="relative z-10 overflow-hidden">
+                  {/* Background Glow */}
+                  <div className="absolute top-0 right-0 w-[200px] h-[200px] bg-purple-600/20 blur-[60px] rounded-full translate-x-1/3 -translate-y-1/3 pointer-events-none" />
+                  
+                  {/* Header: Label */}
+                  <div className="px-5 py-3 flex items-center justify-between border-b border-white/10 bg-white/5 backdrop-blur-sm">
+                      <div className="flex items-center gap-2 text-purple-400">
+                          <Timer className="w-5 h-5 animate-pulse" />
+                          <span className="font-black italic uppercase tracking-widest text-sm">Récord de Vuelta</span>
+                      </div>
+                      <div className="w-16 h-1 bg-purple-500 rounded-full" />
+                  </div>
 
-            {/* Header */}
-            <div className="relative z-10 px-4 py-3 flex items-center gap-3 border-b border-white/10 bg-[#0a0a0a]">
-               <div className="w-10 h-8 flex items-center justify-center rounded bg-white/10 font-black italic text-lg text-white">
-                  {activeCard.data.number}
+                  {/* Main Content */}
+                  <div className="p-6 flex flex-col items-center relative">
+                      {/* Time */}
+                      <div className="text-5xl font-black italic tracking-tighter text-white drop-shadow-[0_4px_8px_rgba(0,0,0,0.5)] mb-3 tabular-nums relative z-10">
+                          {activeCard.data.time}
+                      </div>
+                      
+                      {/* Driver Info */}
+                      <div className="flex items-center gap-3 w-full bg-white/5 rounded-lg p-2 border border-white/10">
+                          <div className="w-12 h-10 flex items-center justify-center rounded bg-purple-600 text-white font-black italic text-xl shadow-lg shrink-0">
+                              {activeCard.data.number}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                              <div className="font-black italic uppercase text-xl leading-none truncate text-white/90">
+                                  {activeCard.data.name}
+                              </div>
+                          </div>
+                      </div>
+                  </div>
                </div>
-               <div className="font-black uppercase italic text-xl leading-none truncate flex-1 text-white">
-                  {activeCard.data.name}
-               </div>
-            </div>
-
-            {/* Content */}
-            <div className="relative z-10 p-4">
-              <div className="flex flex-col items-center justify-center min-h-[60px]">
-                <div className={`text-6xl font-black tabular-nums leading-none tracking-tighter text-center italic transition-all duration-300 ${activeCard.type === 'FASTEST' ? "text-purple-400 drop-shadow-[0_0_10px_rgba(168,85,247,0.5)]" : (activeCard.stage === 'result' ? (activeCard.data.deltaMs > 0 ? "text-red-500 drop-shadow-[0_0_10px_rgba(239,68,68,0.5)]" : "text-green-500 drop-shadow-[0_0_10px_rgba(34,197,94,0.5)]") : "text-white")}`}>
-                  {activeCard.type === 'FASTEST' ? activeCard.data.time : cardTimerDisplay}
+            ) : (
+              /* STANDARD DESIGN (FINISH / OTHER) */
+              <>
+                <div className="relative z-10 px-4 py-3 flex items-center gap-3 border-b border-white/10 bg-[#0a0a0a]">
+                   <div className="w-10 h-8 flex items-center justify-center rounded bg-white/10 font-black italic text-lg text-white">
+                      {activeCard.data.number}
+                   </div>
+                   <div className="font-black uppercase italic text-xl leading-none truncate flex-1 text-white">
+                      {activeCard.data.name}
+                   </div>
                 </div>
-              </div>
-              
-              <div className="flex items-center justify-center pt-3 mt-2 border-t border-white/10">
-                {activeCard.type === 'FASTEST' ? (
-                    <div className="px-3 py-1 rounded bg-purple-600 text-white font-black italic uppercase tracking-wider text-sm shadow-[0_0_15px_rgba(147,51,234,0.4)]">
-                        RÉCORD DE VUELTA
+
+                <div className="relative z-10 p-4">
+                  <div className="flex flex-col items-center justify-center min-h-[60px]">
+                    <div className={`text-5xl font-black tabular-nums leading-none tracking-tighter text-center italic transition-all duration-300 ${activeCard.stage === 'result' ? (activeCard.data.deltaMs > 0 ? "text-red-500 drop-shadow-[0_0_10px_rgba(239,68,68,0.5)]" : "text-green-500 drop-shadow-[0_0_10px_rgba(34,197,94,0.5)]") : "text-white"}`}>
+                      {cardTimerDisplay}
                     </div>
-                ) : (
-                    activeCard.data.deltaMs !== null && Math.abs(activeCard.data.deltaMs) < 10000 && activeCard.stage === 'result' ? (
-                    <div className={`px-3 py-1 rounded font-black tabular-nums leading-none tracking-tight italic text-xl shadow-lg ${activeCard.data.deltaMs < 0 ? "bg-green-500 text-black" : "bg-red-500 text-white"}`}>
-                        {activeCard.data.deltaMs > 0 ? "+" : ""}{(activeCard.data.deltaMs / 1000).toFixed(2)}
-                    </div>
-                    ) : (
-                    <div className="text-white/30 text-xs font-bold italic uppercase tracking-widest">EN CURSO</div>
-                    )
-                )}
-              </div>
-            </div>
+                  </div>
+                  
+                  <div className="flex items-center justify-center pt-3 mt-2 border-t border-white/10">
+                        {activeCard.data.deltaMs !== null && Math.abs(activeCard.data.deltaMs) < 10000 && activeCard.stage === 'result' ? (
+                        <div className={`px-3 py-1 rounded font-black tabular-nums leading-none tracking-tight italic text-xl shadow-lg ${activeCard.data.deltaMs < 0 ? "bg-green-500 text-black" : "bg-red-500 text-white"}`}>
+                            {activeCard.data.deltaMs > 0 ? "+" : ""}{(activeCard.data.deltaMs / 1000).toFixed(2)}
+                        </div>
+                        ) : (
+                        <div className="text-white/30 text-xs font-bold italic uppercase tracking-widest">EN CURSO</div>
+                        )}
+                  </div>
+                </div>
+              </>
+            )}
           </animate.div>
         )
       ))}

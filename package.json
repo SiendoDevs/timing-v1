@@ -1,6 +1,6 @@
 {
   "name": "streamrace-overlay",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "private": true,
   "description": "StreamRace Overlay - Sistema de gestión de gráficos y tiempos para plataformas de streaming",
   "type": "module",
@@ -15,6 +15,7 @@
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^4.21.1",
+    "framer-motion": "^12.29.2",
     "i18next": "^25.8.0",
     "lucide-react": "^0.562.0",
     "multer": "^2.0.2",

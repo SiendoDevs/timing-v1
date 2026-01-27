@@ -5,6 +5,14 @@ Todas las variaciones notables de este proyecto serán documentadas en este arch
 El formato está basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/),
 y este proyecto se adhiere a [Semantic Versioning](https://semver.org/lang/es/).
 
+## [1.2.3] - 2026-01-27
+### Añadido
+- **Animaciones:** Integración de `framer-motion` en `LiveTiming` para transiciones suaves al reordenar posiciones en la tabla.
+- **UX:** Persistencia de 8 segundos para las flechas de cambio de posición (▲/▼), permitiendo visualizar mejor los adelantamientos incluso con actualizaciones lentas.
+
+### Corregido
+- **Récord de Vuelta:** Desacoplada la lógica del botón "Récord de Vuelta". Ahora solo alterna la tarjeta emergente, mientras que el resaltado en tabla (fila morada + icono) permanece siempre visible para el piloto más rápido.
+
 ## [1.2.2] - 2026-01-27
 ### Añadido
 - **Subida de Imágenes:** Soporte completo para subir mapas de circuitos (PNG, max 1MB) directamente a Cloudinary desde el Dashboard.

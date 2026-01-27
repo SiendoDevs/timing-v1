@@ -10,7 +10,12 @@ const translationCache = new Map();
  * @returns {string} - Translated text
  */
 export function useAutoTranslation(text, targetLang = 'es') {
-  const [translatedText, setTranslatedText] = useState(text);
+  const cacheKey = `${text}_${targetLang}`;
+  const cached = translationCache.get(cacheKey);
+
+  // Initialize with cached value or null (if waiting for translation)
+  // If text is empty, we can just return empty string immediately
+  const [translatedText, setTranslatedText] = useState(text ? (cached || null) : "");
 
   useEffect(() => {
     if (!text) {
@@ -18,12 +23,8 @@ export function useAutoTranslation(text, targetLang = 'es') {
       return;
     }
 
-    // If text is already in target language or empty, skip
-    // (Simple heuristic: if we want ES and text seems to be English)
-    
-    const cacheKey = `${text}_${targetLang}`;
-    if (translationCache.has(cacheKey)) {
-      setTranslatedText(translationCache.get(cacheKey));
+    if (cached) {
+      setTranslatedText(cached);
       return;
     }
 
@@ -59,6 +60,7 @@ export function useAutoTranslation(text, targetLang = 'es') {
       } catch (err) {
         console.warn("Translation API failed, falling back to original text", err);
         // On error, keep original text
+        if (isMounted) setTranslatedText(text);
       }
     };
 

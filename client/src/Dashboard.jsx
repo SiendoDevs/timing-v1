@@ -955,7 +955,13 @@ export default function Dashboard() {
   }
 
   async function updateFlag(flag) {
-    setRaceFlag(flag);
+    // Toggle logic: if clicking the same flag (and it's not GREEN), revert to GREEN
+    let target = flag;
+    if (flag !== "GREEN" && raceFlag === flag) {
+      target = "GREEN";
+    }
+
+    setRaceFlag(target);
     try {
       const apiOrigin = import.meta.env.VITE_API_URL || "";
       const res = await fetch(`${apiOrigin}/api/flag`, {
@@ -964,7 +970,7 @@ export default function Dashboard() {
             "Content-Type": "application/json",
             "Authorization": `Bearer ${token}`
         },
-        body: JSON.stringify({ flag })
+        body: JSON.stringify({ flag: target })
       });
       if (res.status === 401) logout();
     } catch (e) { console.error(e); }
@@ -1181,16 +1187,16 @@ export default function Dashboard() {
 
                <div className="col-span-2 flex gap-2 pt-2 border-t border-white/5 mt-2">
                  <input 
-                    value={blackFlagNum}
-                    onChange={(e) => setBlackFlagNum(e.target.value)}
-                    placeholder="#"
-                    className="w-20 bg-black/40 border border-white/20 rounded text-center font-mono font-bold text-white focus:border-[var(--accent)] outline-none"
-                 />
-                 <button 
-                    onClick={() => {
-                      const target = blackFlagNum ? `BLACK:${blackFlagNum}` : "BLACK";
-                      updateFlag(raceFlag === target ? "GREEN" : target);
-                    }} 
+                   value={blackFlagNum}
+                   onChange={(e) => setBlackFlagNum(e.target.value)}
+                   placeholder="#"
+                   className="w-20 bg-black/40 border border-white/20 rounded text-center font-mono font-bold text-white focus:border-[var(--accent)] outline-none"
+                />
+                <button 
+                   onClick={() => {
+                     const target = blackFlagNum ? `BLACK:${blackFlagNum}` : "BLACK";
+                     updateFlag(target);
+                   }} 
                     className={`flex-1 p-3 rounded font-black text-sm uppercase border transition-all ${raceFlag && raceFlag.startsWith("BLACK") ? "bg-black text-white border-white/50 shadow-[0_0_15px_rgba(255,255,255,0.4)] animate-pulse" : "bg-black/40 text-gray-400 border-white/10 hover:bg-black/60"}`}
                  >
                     BANDERA NEGRA

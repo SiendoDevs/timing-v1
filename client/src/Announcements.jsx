@@ -3,14 +3,13 @@ import { Megaphone } from "lucide-react";
 import { animate, useMount } from "react-ui-animate";
 import { useAutoTranslation } from "./hooks/useAutoTranslation";
 
-function AnnouncementItem({ item }) {
-  // Use hook here so each item gets translated individually
-  const translatedText = useAutoTranslation(item.text, 'es');
+function AnnouncementItem({ item, overrideText }) {
+  const displayText = overrideText || item.text;
 
   return (
     <div className="flex items-center text-nowrap gap-2 pr-4">
       {item.time && <span className="opacity-60">{item.time}</span>}
-      <span className="uppercase italic">{translatedText}</span>
+      <span className="uppercase italic">{displayText}</span>
     </div>
   );
 }
@@ -26,8 +25,16 @@ export default function Announcements({ items }) {
     }
   }, [items]);
 
-  const hasItems = visible && Array.isArray(items) && items.length > 0;
-  const list = hasItems ? items.slice(0, 1) : [];
+  // Handle translation at the container level to gate visibility
+  const activeItem = (Array.isArray(items) && items.length > 0) ? items[0] : null;
+  const isSpanish = activeItem?.lang === 'es';
+  const textToTranslate = isSpanish ? "" : (activeItem?.text || "");
+  const translatedText = useAutoTranslation(textToTranslate, 'es');
+
+  // If item is Spanish, we are ready. If English, wait for translation (non-null).
+  const isReady = isSpanish || (activeItem && translatedText);
+
+  const hasItems = visible && !!activeItem && isReady;
   
   const mounted = useMount(hasItems, { from: 0, enter: 1, exit: 0 });
 
@@ -43,9 +50,12 @@ export default function Announcements({ items }) {
       >
         <div className="flex items-center gap-4 text-white">
           <Megaphone className="text-[var(--accent)]" style={{ width: "1.2em", height: "1.2em" }} />
-          {list.map((x, i) => (
-            <AnnouncementItem key={i} item={x} />
-          ))}
+          {activeItem && (
+            <AnnouncementItem 
+               item={activeItem} 
+               overrideText={isSpanish ? activeItem.text : translatedText} 
+            />
+          )}
         </div>
       </animate.div>
     )
