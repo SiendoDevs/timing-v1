@@ -25,7 +25,22 @@ const USERS_FILE = path.resolve("users.json");
 
 // --- REDIS CONNECTION ---
 let useRedis = false;
-const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
+let REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
+
+// Sanitize REDIS_URL if user accidentally pasted the CLI command
+if (REDIS_URL.includes('redis-cli')) {
+  console.log("Detected redis-cli command in REDIS_URL, sanitizing...");
+  // Try to extract the URL part: matches rediss://... or redis://... until a space or end of string
+  // Remove quotes if present
+  REDIS_URL = REDIS_URL.replace(/['"]/g, '');
+  const match = REDIS_URL.match(/(rediss?:\/\/[^\s]+)/);
+  if (match) {
+    REDIS_URL = match[1];
+    console.log("Sanitized REDIS_URL to:", REDIS_URL.replace(/:[^:@]+@/, ':***@')); // Log masked URL
+  } else {
+    console.error("Could not extract URL from REDIS_URL env var");
+  }
+}
 
 // Configure Redis client safely
 const redisOptions = { url: REDIS_URL };
