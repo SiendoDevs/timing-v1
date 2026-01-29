@@ -19,7 +19,10 @@ import {
   Check,
   Wifi,
   Upload as UploadIcon,
-  CloudSun
+  CloudSun,
+  LayoutDashboard,
+  Settings,
+  CircleHelp
 } from "lucide-react";
 
 import Input from "./components/ui/Input";
@@ -30,6 +33,7 @@ import UsersManager from "./components/dashboard/UsersManager";
 import CircuitInfo from "./components/dashboard/CircuitInfo.jsx";
 import WeatherPanel from "./components/weather/WeatherPanel.jsx";
 import ConfigPanel from "./components/dashboard/ConfigPanel.jsx";
+import HelpPanel from "./components/dashboard/HelpPanel.jsx";
 
 export default function Dashboard() {
   // Auth State
@@ -342,43 +346,58 @@ export default function Dashboard() {
           <nav className="flex items-center gap-1 bg-white/5 p-1 rounded-lg">
             <button
               onClick={() => setActiveTab("dashboard")}
-              className={`px-4 py-1.5 rounded-md text-xs font-bold uppercase transition-all ${
+              title="Dashboard"
+              className={`p-2 rounded-md transition-all ${
                 activeTab === "dashboard"
                   ? "bg-[var(--accent)] text-black shadow-lg"
                   : "text-white/60 hover:text-white hover:bg-white/5"
               }`}
             >
-              Dashboard
+              <LayoutDashboard size={20} />
             </button>
             <button
               onClick={() => setActiveTab("circuit")}
-              className={`px-4 py-1.5 rounded-md text-xs font-bold uppercase transition-all ${
+              title="Circuito"
+              className={`p-2 rounded-md transition-all ${
                 activeTab === "circuit"
                   ? "bg-[var(--accent)] text-black shadow-lg"
                   : "text-white/60 hover:text-white hover:bg-white/5"
               }`}
             >
-              Circuito
+              <MapIcon size={20} />
             </button>
             <button
               onClick={() => setActiveTab("weather")}
-              className={`px-4 py-1.5 rounded-md text-xs font-bold uppercase transition-all ${
+              title="Clima"
+              className={`p-2 rounded-md transition-all ${
                 activeTab === "weather"
                   ? "bg-[var(--accent)] text-black shadow-lg"
                   : "text-white/60 hover:text-white hover:bg-white/5"
               }`}
             >
-              Clima
+              <CloudSun size={20} />
             </button>
             <button
               onClick={() => setActiveTab("config")}
-              className={`px-4 py-1.5 rounded-md text-xs font-bold uppercase transition-all ${
+              title="Configuración"
+              className={`p-2 rounded-md transition-all ${
                 activeTab === "config"
                   ? "bg-[var(--accent)] text-black shadow-lg"
                   : "text-white/60 hover:text-white hover:bg-white/5"
               }`}
             >
-              Config
+              <Settings size={20} />
+            </button>
+            <button
+              onClick={() => setActiveTab("help")}
+              title="Ayuda"
+              className={`p-2 rounded-md transition-all ${
+                activeTab === "help"
+                  ? "bg-[var(--accent)] text-black shadow-lg"
+                  : "text-white/60 hover:text-white hover:bg-white/5"
+              }`}
+            >
+              <CircleHelp size={20} />
             </button>
           </nav>
           
@@ -552,7 +571,7 @@ export default function Dashboard() {
           {/* Voting Manager */}
           <div className="bg-[#141414] rounded-xl border border-white/5 overflow-hidden shadow-2xl flex flex-col shrink-0">
              <div className="bg-white/[0.02] flex flex-col">
-                <SectionHeader title="Piloto Destacado" icon={<Award className="w-5 h-5 text-[var(--accent)]" />} />
+                <SectionHeader title="Piloto StreamRace" icon={<Award className="w-5 h-5 text-[var(--accent)]" />} />
                 <div className="p-6 flex-1 flex flex-col">
                   {!votingActive ? (
                     <div className="flex flex-col gap-6">
@@ -747,6 +766,7 @@ export default function Dashboard() {
           setLogoUrl={setLogoUrl}
         />
       )}
+      {activeTab === "help" && <HelpPanel />}
       {showUsers && <UsersManager token={token} onClose={() => setShowUsers(false)} />}
     </div>
   );

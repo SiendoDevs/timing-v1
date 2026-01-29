@@ -144,15 +144,19 @@ export default function VotePage() {
   }
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-white p-6 relative">
+    <div className="min-h-screen bg-neutral-950 text-white p-6 relative flex flex-col items-center justify-center">
       {logoUrl && (
           <div className="absolute top-6 right-6">
               <img src={logoUrl} alt="Logo" className="w-16 h-16 object-contain" />
           </div>
       )}
-      <header className="mb-8 text-center">
-        <h1 className="text-3xl font-black text-amber-500 mb-2 uppercase tracking-tight">Piloto Destacado</h1>
-        <p className="text-neutral-400 text-sm">Selecciona a tu piloto favorito para votar.</p>
+      <header className="mb-8 flex flex-col items-center">
+        <div className="flex items-center justify-center gap-3 mb-2">
+            <div className="w-8 h-8 bg-[var(--accent)] -skew-x-12 shrink-0 shadow-[0_0_15px_rgba(216,85,43,0.4)]" />
+            <h1 className="text-4xl font-black text-white italic uppercase tracking-tighter">StreamRace</h1>
+        </div>
+        <h2 className="text-sm font-bold text-[var(--accent)] uppercase tracking-[0.2em] opacity-80">Piloto StreamRace</h2>
+        <p className="text-neutral-500 text-xs mt-2">Selecciona a tu piloto favorito para votar.</p>
       </header>
 
       <div className="grid gap-4 max-w-md mx-auto">
@@ -161,16 +165,16 @@ export default function VotePage() {
             key={c.number}
             onClick={() => handleVote(c.number)}
             disabled={loading}
-            className="relative overflow-hidden group bg-neutral-900 border border-white/10 hover:border-amber-500/50 hover:bg-neutral-800 transition-all rounded-xl p-4 text-left flex items-center gap-4 active:scale-[0.98]"
+            className="relative overflow-hidden group bg-neutral-900 border border-white/10 hover:border-[var(--accent)]/50 hover:bg-neutral-800 transition-all rounded-xl p-4 text-left flex items-center gap-4 active:scale-[0.98]"
           >
-            <div className="w-12 h-12 rounded-lg bg-neutral-800 flex items-center justify-center text-xl font-bold font-mono text-amber-500 border border-white/5 group-hover:border-amber-500/20 group-hover:bg-amber-500/10 transition-colors">
+            <div className="w-12 h-12 rounded-lg bg-neutral-800 flex items-center justify-center text-xl font-bold font-mono text-[var(--accent)] border border-white/5 group-hover:border-[var(--accent)]/20 group-hover:bg-[var(--accent)]/10 transition-colors">
               {c.number}
             </div>
             <div>
               <div className="font-bold text-lg leading-tight">{c.name}</div>
               <div className="text-xs text-neutral-500 mt-1 uppercase tracking-wider font-medium">Votar piloto</div>
             </div>
-            <div className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity text-amber-500">
+            <div className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity text-[var(--accent)]">
               <CheckCircle2 className="w-6 h-6" />
             </div>
           </button>

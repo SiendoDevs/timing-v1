@@ -775,63 +775,107 @@ const SCRAPE_FUNCTION = (wantDebug) => {
     return { rows, sessionName, sessionLaps, flagFinish, announcements, debug: dbg };
 };
 
+// --- ACTIVITY TRACKING ---
+let lastRequestTime = Date.now();
+const IDLE_TIMEOUT = 30000; // 30 seconds idle time
+
+app.use((req, res, next) => {
+  // Update activity timestamp on any request to API or relevant pages
+  if (req.url.startsWith('/api') || 
+      req.url === '/livetiming' || 
+      req.url === '/dashboard' || 
+      req.url === '/results' || 
+      req.url === '/grid' ||
+      req.url === '/track' ||
+      req.url === '/voting-overlay') {
+    lastRequestTime = Date.now();
+  }
+  next();
+});
+
 // --- BACKGROUND LOOP ---
 
 let isTickRunning = false;
 
 async function tick() {
-  if (isTickRunning || !scrapingEnabled || !speedhiveUrl) {
-    return;
-  }
+  if (isTickRunning) return;
   isTickRunning = true;
 
-  const p = await ensurePage(speedhiveUrl);
-  if (!p) {
-      isTickRunning = false;
-      return; 
-  }
-
   try {
-    const result = await p.evaluate(SCRAPE_FUNCTION, false);
-    
-    // Logic to merge/stabilize data (same as before)
-    const isEmpty = !result.rows || result.rows.length === 0;
-    const hasOldData = lastData.standings && lastData.standings.length > 0;
-    const cleanName = (n) => (n || "").toLowerCase().replace(/\s+/g, "").replace(/speedhive|mylaps|loading/gi, "").replace(/lap\d+/gi, "").replace(/vuelta\d+/gi, "").replace(/\d+\/\d+/g, "");
-    const s1 = cleanName(result.sessionName);
-    const s2 = cleanName(lastData.sessionName);
-    const sameSession = !(!s1 || !s2) && (s1 === s2 || s1.includes(s2) || s2.includes(s1));
-
-    if (isEmpty && hasOldData && sameSession) {
-        lastData.updatedAt = Date.now();
-        if (result.announcements && result.announcements.length) {
-            lastData.announcements = result.announcements;
-        }
-    } else {
-        let finalAnnouncements = result.announcements || [];
-        if (finalAnnouncements.length === 0 && sameSession && lastData.announcements && lastData.announcements.length > 0) {
-           finalAnnouncements = lastData.announcements;
-        }
-        let finalSessionName = result.sessionName || "";
-        if ((!finalSessionName || /speedhive|mylaps|loading/i.test(finalSessionName)) && lastData.sessionName) {
-            finalSessionName = lastData.sessionName;
-        }
-        lastData = { 
-            standings: result.rows, 
-            sessionName: finalSessionName, 
-            sessionLaps: result.sessionLaps || "", 
-            flagFinish: !!result.flagFinish, 
-            announcements: finalAnnouncements, 
-            updatedAt: Date.now() 
-        };
+    // If no activity for IDLE_TIMEOUT, skip scraping to save resources and avoid bans
+    if (Date.now() - lastRequestTime > IDLE_TIMEOUT) {
+      if (globalBrowser) {
+          console.log("System idle. Closing browser to save resources.");
+          try { 
+              // Disconnect first to avoid killing the process if managed by puppeteer
+              if (globalBrowser.isConnected()) {
+                  await globalBrowser.disconnect();
+              }
+              await globalBrowser.close(); 
+          } catch (err) {
+              // Ignore EBUSY errors on Windows (common during temp file cleanup)
+              if (err.code !== 'EBUSY' && !err.message.includes('EBUSY') && !err.message.includes('unlink')) {
+                  console.error("Error closing idle browser:", err.message);
+              }
+          }
+          globalBrowser = null;
+          globalPage = null;
+          lastUrl = "";
+      }
+      return;
     }
-  } catch (e) {
-    console.error("Tick scrape error:", e.message);
-    // If error is related to target closed, reset
-    if (e.message.includes("Target closed") || e.message.includes("Session closed")) {
-        globalPage = null;
-        globalBrowser = null;
-        lastUrl = "";
+
+    if (!scrapingEnabled || !speedhiveUrl) {
+      return;
+    }
+
+    const p = await ensurePage(speedhiveUrl);
+    if (!p) {
+        return; 
+    }
+
+    try {
+      const result = await p.evaluate(SCRAPE_FUNCTION, false);
+      
+      // Logic to merge/stabilize data (same as before)
+      const isEmpty = !result.rows || result.rows.length === 0;
+      const hasOldData = lastData.standings && lastData.standings.length > 0;
+      const cleanName = (n) => (n || "").toLowerCase().replace(/\s+/g, "").replace(/speedhive|mylaps|loading/gi, "").replace(/lap\d+/gi, "").replace(/vuelta\d+/gi, "").replace(/\d+\/\d+/g, "");
+      const s1 = cleanName(result.sessionName);
+      const s2 = cleanName(lastData.sessionName);
+      const sameSession = !(!s1 || !s2) && (s1 === s2 || s1.includes(s2) || s2.includes(s1));
+
+      if (isEmpty && hasOldData && sameSession) {
+          lastData.updatedAt = Date.now();
+          if (result.announcements && result.announcements.length) {
+              lastData.announcements = result.announcements;
+          }
+      } else {
+          let finalAnnouncements = result.announcements || [];
+          if (finalAnnouncements.length === 0 && sameSession && lastData.announcements && lastData.announcements.length > 0) {
+             finalAnnouncements = lastData.announcements;
+          }
+          let finalSessionName = result.sessionName || "";
+          if ((!finalSessionName || /speedhive|mylaps|loading/i.test(finalSessionName)) && lastData.sessionName) {
+              finalSessionName = lastData.sessionName;
+          }
+          lastData = { 
+              standings: result.rows, 
+              sessionName: finalSessionName, 
+              sessionLaps: result.sessionLaps || "", 
+              flagFinish: !!result.flagFinish, 
+              announcements: finalAnnouncements, 
+              updatedAt: Date.now() 
+          };
+      }
+    } catch (e) {
+      console.error("Tick scrape error:", e.message);
+      // If error is related to target closed, reset
+      if (e.message.includes("Target closed") || e.message.includes("Session closed")) {
+          globalPage = null;
+          globalBrowser = null;
+          lastUrl = "";
+      }
     }
   } finally {
     isTickRunning = false;

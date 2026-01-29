@@ -81,7 +81,7 @@ export default function VotingWidget() {
     <div className="rounded-xl overflow-hidden shadow-[0_8px_28px_rgba(0,0,0,0.5)] bg-[#141414] border border-white/5 w-[220px] animate-in fade-in slide-in-from-right-4">
       <div className="flex items-center gap-2 px-3 py-2 border-b border-white/10 bg-[#0a0a0a] text-[var(--accent)] font-extrabold uppercase italic text-sm">
         <Vote className="w-4 h-4" />
-        <span>Piloto Destacado</span>
+        <span>Piloto StreamRace</span>
       </div>
       
       <div className="p-5">

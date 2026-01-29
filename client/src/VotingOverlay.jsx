@@ -60,7 +60,7 @@ export default function VotingOverlay() {
        <div className="w-[400px] bg-black/90 rounded-xl overflow-hidden shadow-[0_0_15px_rgba(0,0,0,0.8)] border border-white/20 animate-in fade-in slide-in-from-bottom-4 duration-500">
           <div className="bg-[var(--accent)] p-3 text-center font-extrabold text-xl uppercase tracking-wider text-white shadow-lg relative overflow-hidden">
              <div className="absolute inset-0 bg-white/10 skew-x-[-20deg] translate-x-[-50%]"></div>
-             Piloto Destacado
+             Piloto StreamRace
           </div>
           <div className="p-5 space-y-4">
              {displayList.map((c, i) => (

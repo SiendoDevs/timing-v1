@@ -1,6 +1,6 @@
 import React from "react";
 import { motion } from "framer-motion";
-import { Timer } from "lucide-react";
+import { Timer, ChevronUp, ChevronDown, Minus } from "lucide-react";
 import { safe, surname, idFor } from "../../utils/formatting";
 
 export default function TimingRow({ 
@@ -16,32 +16,34 @@ export default function TimingRow({
   const prevVal = Number.isFinite(prevPos) ? prevPos : null;
   const sname = surname(row.name);
   
-  // Diff logic
-  // We assume if prevPos is undefined/null, diff is 0, unless handled by parent.
-  // In LiveTiming.jsx: const diff = (lastPositions.current.size > 0 && prevVal != null) ? prevVal - curPos : 0;
-  // We'll rely on prevPos being passed correctly (or we check for null here).
-  // But we don't know lastPositions.size here.
-  // So maybe better to pass 'initialDiff' or just 'diff'.
-  // Let's improve the prop API. 
-  // We will calculate diff inside, but we need to know if we have history.
-  // Actually, passing 'diff' from parent is safer.
-  // But let's stick to the extracted logic if possible.
-  // If I change the API, I have to change LiveTiming logic.
-  // Let's calculate 'diff' inside ONLY IF prevPos is valid number.
-  
   let diff = (prevVal != null) ? prevVal - curPos : 0;
   
   let finalDiff = diff;
   if (finalDiff === 0 && recentChange) {
-      if (Date.now() - recentChange.time < 8000) {
+      // Persist for 15s to match LiveTiming logic
+      if (Date.now() - recentChange.time < 15000) {
           finalDiff = recentChange.diff;
       }
   }
 
   const arrow = finalDiff !== 0
     ? finalDiff > 0
-      ? <span className="text-green-500 ml-2 text-xs font-black flex items-center gap-0.5 bg-green-500/10 px-1 rounded">▲ {Math.abs(finalDiff)}</span>
-      : <span className="text-red-500 ml-2 text-xs font-black flex items-center gap-0.5 bg-red-500/10 px-1 rounded">▼ {Math.abs(finalDiff)}</span>
+      ? <motion.div 
+          initial={{ scale: 0, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          className="absolute left-0 top-1/2 -translate-y-1/2 flex items-center justify-center gap-0.5 bg-green-500/20 text-green-400 h-6 min-w-[36px] rounded-md text-xs font-black border border-green-500/20 shadow-[0_0_10px_rgba(34,197,94,0.1)]"
+        >
+          <ChevronUp size={14} strokeWidth={4} />
+          <span>{Math.abs(finalDiff)}</span>
+        </motion.div>
+      : <motion.div 
+          initial={{ scale: 0, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          className="absolute left-0 top-1/2 -translate-y-1/2 flex items-center justify-center gap-0.5 bg-red-500/20 text-red-400 h-6 min-w-[36px] rounded-md text-xs font-black border border-red-500/20 shadow-[0_0_10px_rgba(239,68,68,0.1)]"
+        >
+          <ChevronDown size={14} strokeWidth={4} />
+          <span>{Math.abs(finalDiff)}</span>
+        </motion.div>
     : null;
   
   let metricVal = "";
@@ -64,11 +66,11 @@ export default function TimingRow({
       className={`flex items-center gap-3 px-4 py-1.5 border-b border-white/5 bg-[#0f0f0f]/50 hover:bg-white/5 transition-colors ${isFastest && !row.hasFinishFlag ? "bg-purple-600/50 animate-pulse" : ""}`}
     >
       {/* Position */}
-      <div className="w-14 flex items-center justify-end font-black italic text-xl text-white/50 relative pr-2">
-        {row.hasFinishFlag && <span className="absolute left-0 top-1/2 -translate-y-1/2 text-xs">🏁</span>}
+      <div className="w-20 flex items-center justify-end font-black italic text-xl text-white/50 relative pr-2">
+        {row.hasFinishFlag && <span className="absolute left-0 top-1/2 -translate-y-1/2 text-2xl filter drop-shadow-[0_0_4px_rgba(255,255,255,0.4)]">🏁</span>}
         {!row.hasFinishFlag && isFastest && <span className="absolute left-0 top-1/2 -translate-y-1/2 text-purple-500 flex items-center justify-center"><Timer size={20} /></span>}
         <span>{safe(row.position)}</span>
-        {arrow}
+        {!row.hasFinishFlag && arrow}
       </div>
 
       {/* Number */}
